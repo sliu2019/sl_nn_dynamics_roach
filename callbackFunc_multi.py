@@ -81,7 +81,7 @@ def xbee_received(packet):
         if type == command.GET_IMU_DATA:
             datum = unpack(pattern, data)
             shared.callback += 1
-            ###print "Packet received from xbee... Got IMU data: ", datum
+            #print "Packet received from xbee... Got IMU data: ", datum
             shared.imu_queues[src_addr].put(datum)
             #if shared.prevData == datum[0]:
             #    print "idk why, DOUBLE SENT"

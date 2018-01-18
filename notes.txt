@@ -1,4 +1,9 @@
 
++x is toward wall that we're looking straight at (when sitting at computer)
++y is toward door
++z is up
+
+#################################################
 
 ALWAYS RUN THIS:
 cd ~/optitrack_workspace

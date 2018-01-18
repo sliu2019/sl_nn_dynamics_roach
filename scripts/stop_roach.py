@@ -16,7 +16,6 @@ from threading import Condition
 import thread
 from Queue import Queue
 from collections import OrderedDict
-import command
 import time, sys, os, traceback
 import serial
 import math
@@ -27,6 +26,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 #my imports
 from utils import *
+import command
 
 #####################################################
 #####################################################
@@ -34,7 +34,7 @@ from utils import *
 #vars to specify
 
 DEFAULT_ADDRS = ['\x00\x01']
-serial_port = '/dev/ttyUSB0'
+serial_port = '/dev/ttyUSB1'
 baud_rate = 57600
 
 #####################################################

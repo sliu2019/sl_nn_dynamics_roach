@@ -41,22 +41,26 @@ from utils import *
 ###############################
 
 task_type='carpet'
-num_rollouts = 1
+num_rollouts = 10
 
-use_pid_mode = False # True
-slow_pid_mode = True 
+use_pid_mode = False
+slow_pid_mode = False
 use_joystick= False
+print_frequency = 10
 
-serial_port = '/dev/ttyUSB0'
+serial_port = '/dev/ttyUSB1'
 baud_rate = 57600
 DEFAULT_ADDRS = ['\x00\x01']
 frequency_value = 10
-rollout_length= 20 #100
+rollout_length= 50
 
 #room dimensions
   # x in (-1, 2), y in (-1.25, 1.75)
 center = [0.50, 0.25]
 radius = 1.50
+
+  # x in (-1.4,2.5)
+  # y in (-1.2, 1.8)
 
 ###############################
 ######## MOTOR LIMITS #########
@@ -74,8 +78,8 @@ if(use_pid_mode):
     MAX_LEFT = 6*math.pow(2,16)*0.001
     MAX_RIGHT = 6*math.pow(2,16)*0.001
   else:
-    MIN_LEFT = 6*math.pow(2,16)*0.001
-    MIN_RIGHT = 6*math.pow(2,16)*0.001
+    MIN_LEFT = 4*math.pow(2,16)*0.001
+    MIN_RIGHT = 4*math.pow(2,16)*0.001
     MAX_LEFT = 12*math.pow(2,16)*0.001
     MAX_RIGHT = 12*math.pow(2,16)*0.001
 
@@ -118,6 +122,7 @@ def convert_command(input_val):
 #init ROS node
 rospy.init_node('data_collection', anonymous=True)
 rate = rospy.Rate(frequency_value)
+counter_turn=0
 
 #setup serial, roach bridge, and imu queues
 xb, robots, shared.imu_queues = setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode)
@@ -152,6 +157,7 @@ if not os.path.exists(data_dir):
 
 def run(run_num):
   global lock
+  global counter_turn
   start_roach(xb, lock, robots, use_pid_mode)
 
   #init values for the loop below
@@ -162,7 +168,7 @@ def run(run_num):
 
   while(step<rollout_length):
 
-    if(step%10==0):
+    if(step%print_frequency==0):
       shouldPrint=True
       print "\n", "    step ", step
     else:
@@ -176,8 +182,8 @@ def run(run_num):
     for robot in robots:
 
       #select action to send
-      send_action = [0, 0]
-      ##send_action = np.copy(selected_action)
+      ##send_action = [0, 0]
+      send_action = np.copy(selected_action)
       if(shouldPrint):
         print "    sent action: ", send_action[0], send_action[1]
 
@@ -237,12 +243,16 @@ def run(run_num):
         selected_action[1] = npr.uniform(MIN_RIGHT, MAX_RIGHT)
       #force a turn to stay in region
       else:
-        # turn LEFT
-        # selected_action[0] = npr.uniform(MIN_LEFT, MIN_LEFT+(MAX_LEFT-MIN_LEFT)/2.0)
-        # selected_action[1] = npr.uniform(MAX_RIGHT-(MAX_RIGHT-MIN_RIGHT)/2.0, MAX_RIGHT)
-        # turn RIGHT
-        selected_action[1] = npr.uniform(MIN_RIGHT, MIN_RIGHT+(MAX_RIGHT-MIN_RIGHT)/3.0)
-        selected_action[0] = npr.uniform(MAX_LEFT-(MAX_LEFT-MIN_LEFT)/3.0, MAX_LEFT)
+        if(counter_turn%2==0):
+          print("TURN LEFT")
+          # turn LEFT
+          selected_action[0] = npr.uniform(MIN_LEFT, MIN_LEFT+(MAX_LEFT-MIN_LEFT)/3.0)
+          selected_action[1] = npr.uniform(MAX_RIGHT-(MAX_RIGHT-MIN_RIGHT)/3.0, MAX_RIGHT)
+        else:
+          print("TURN RIGHT")
+          # turn RIGHT
+          selected_action[1] = npr.uniform(MIN_RIGHT, MIN_RIGHT+(MAX_RIGHT-MIN_RIGHT)/3.0)
+          selected_action[0] = npr.uniform(MAX_LEFT-(MAX_LEFT-MIN_LEFT)/3.0, MAX_LEFT)
 
     else:
       selected_action = command_from_joystick
@@ -265,6 +275,7 @@ def run(run_num):
   ###### STOP MOVING #####
   ########################
 
+  counter_turn+=1
   print 'DONE WITH ROLLOUT ', run_num, '\n\n'
   stop_roach(lock, robots, use_pid_mode)
 

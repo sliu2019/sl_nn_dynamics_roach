@@ -133,7 +133,8 @@ class Actions(object):
         all_samples[:,first_counter,1]=currently_executing_action[1]
 
       #run forward sim to predict possible trajectories
-      resulting_states = dyn_model.do_forward_sim([curr_state,0], np.copy(all_samples), mean_x, mean_y, mean_z, std_x, std_y, std_z, True)
+      many_in_parallel=True
+      resulting_states = dyn_model.do_forward_sim([curr_state,0], np.copy(all_samples), many_in_parallel, None, None)
       resulting_states= np.array(resulting_states) #this is [horizon+1, N, statesize]
 
       #evaluate the trajectories
