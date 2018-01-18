@@ -26,6 +26,7 @@ from collections import OrderedDict
 import time, sys, os, traceback
 import serial
 import math
+import pickle
 
 #add nn_dynamics_roach to sys.path
 import os, sys
@@ -132,6 +133,9 @@ class Controller(object):
     def callback_mocap(self,data):
       self.mocap_info = data
 
+    def kill_robot(self):
+      stop_and_exit_roach(self.xb, self.lock, self.robots, self.use_pid_mode)
+
     def run(self,num_steps_for_rollout, aggregation_loop_counter, dyn_model):
 
       #init values for the loop below
@@ -163,8 +167,8 @@ class Controller(object):
 
         self.lock.acquire()
         for robot in self.robots:
-          send_action = [0,0]
-          ##send_action = np.copy(optimal_action)
+          ##send_action = [0,0]
+          send_action = np.copy(optimal_action)
           print "\nsent action: ", send_action[0], send_action[1]
           if(self.use_pid_mode):
             robot.setVelGetTelem(send_action[0], send_action[1])
@@ -212,13 +216,7 @@ class Controller(object):
           old_ar= robotinfo.posR/math.pow(2,16)*2*math.pi #curr ar
 
         #create state from the info
-        curr_state, old_time, old_pos, old_al, old_ar = singlestep_to_state(robotinfo, self.mocap_info, old_time, old_pos, old_al, old_ar)
-        
-        #save curr as old
-        old_time= copy.deepcopy(curr_time)
-        old_state=np.copy(curr_state)
-        old_al=np.copy(al)
-        old_ar=np.copy(ar)
+        curr_state, old_time, old_pos, old_al, old_ar = singlestep_to_state(robotinfo, self.mocap_info, old_time, old_pos, old_al, old_ar, self.state_representation)
 
         #########################
         ## CHECK STOPPING COND ##
@@ -232,7 +230,9 @@ class Controller(object):
           stop_roach(self.lock, self.robots, self.use_pid_mode)
           
           #save for playback debugging
-          pickle.dump(list_robot_info,open(robot_file,'w')) 
+          robot_file= self.save_dir +'/'+ self.traj_save_path +'/robot_info.obj'
+          mocap_file= self.save_dir +'/'+ self.traj_save_path +'/mocap_info.obj'
+          pickle.dump(list_robot_info,open(robot_file,'w'))
           pickle.dump(list_mocap_info,open(mocap_file,'w'))
 
           #save

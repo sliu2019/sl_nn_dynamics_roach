@@ -48,20 +48,20 @@ def main():
 
     #saving directories
     run_num=77                                          #directory for saving everything
-    desired_shape_for_traj = "left"                     #straight, left, right, circle_left, zigzag, figure8
+    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
     traj_save_path= desired_shape_for_traj + str(0)     #directory name inside run_num directory
     
     #running
-    use_pid_mode = True 
+    use_pid_mode = False 
     slow_pid_mode = True
-    serial_port = '/dev/ttyUSB0'
+    serial_port = '/dev/ttyUSB1'
     baud_rate = 57600
     DEFAULT_ADDRS = ['\x00\x01']
 
     #training data
-    filename_trainingdata='/data_collection/carpet_2018_01_17_14_04_41'
-    training_rollouts=np.arange(3)+0
-    validation_rollouts=[3]
+    filename_trainingdata='/data_collection/carpet_2018_01_18_12_08_08'
+    training_rollouts=np.arange(9)+0
+    validation_rollouts=[9]
 
     #training
     use_existing_data = False
@@ -75,7 +75,7 @@ def main():
     lr = 0.001
     
     #controller
-    num_steps_per_controller_run= 70
+    num_steps_per_controller_run= 40 #70
     N=1000
     horizon = 4
     frequency_value=10
@@ -128,6 +128,7 @@ def main():
         os.makedirs(save_dir+'/data')
         os.makedirs(save_dir+'/saved_forwardsim')
         os.makedirs(save_dir+'/saved_trajfollow')
+        os.makedirs(save_dir+'/'+traj_save_path)
 
     ##return
 
@@ -334,13 +335,13 @@ def main():
         dataZ_new = np.zeros((0,dataZ.shape[1]))
         print("dataX dim: ", dataX.shape)
 
-        '''if(playback_mode):
+        if(playback_mode):
             controller = ControllerPlayback(dt_steps, state_representation, min_motor_gain, max_motor_gain, frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1])
         else:
             controller = Controller(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
                                 left_min, left_max, right_min, right_max, 
                                 use_pid_mode=use_pid_mode, frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
-                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS)'''
+                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS)
 
         while(counter<num_aggregation_iters):
 
@@ -382,7 +383,7 @@ def main():
                     training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, inputs_new, outputs_new, nEpoch_initial, save_dir, fraction_use_new)
                 else:
                     saver = tf.train.Saver()
-                    saver.restore(sess, "saved_dynamics_model.ckpt")
+                    saver.restore(sess, save_dir+ '/models/model_aggIter' +str(counter)+ '.ckpt')
 
             #how good is model on training data
             training_loss_list.append(training_loss)
@@ -512,8 +513,6 @@ def main():
             #####################################
             ## Run controller for a certain amount of steps
             #####################################
-
-            return
 
             selected_multiple_u = []
             resulting_multiple_x = []

@@ -27,7 +27,7 @@ def setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode):
 			r.VERBOSE = False
 			if(use_pid_mode):
 				r.PIDStartMotors()
-  				r.running = True
+    			r.running = True
 			r.zeroPosition() ############### ????
 			# r.setupTelemetryDataNum(5000)
 			# time.sleep(1)
@@ -58,32 +58,36 @@ def start_roach(xb, lock, robots, use_pid_mode):
 
 def stop_roach(lock, robots, use_pid_mode):
 
-	#set thrust for both motors to 0
-	lock.acquire()
-	for robot in robots:
-		if(use_pid_mode):
-			robot.PIDStopMotors()
-			robot.running = False
-		robot.setThrustGetTelem(0, 0)
-		#robot.downloadTelemetry() 
-	lock.release()
-	return
+    #set thrust for both motors to 0
+    lock.acquire()
+    for robot in robots:
+        if(use_pid_mode):
+            robot.setVelGetTelem(0,0)
+            #robot.PIDStopMotors()
+            #robot.running = False
+        else:
+            robot.setThrustGetTelem(0, 0)
+            #robot.downloadTelemetry() 
+    lock.release()
+    return
 
 def stop_and_exit_roach(xb, lock, robots, use_pid_mode):
 
-	#set thrust for both motors to 0
-	lock.acquire()
-	for robot in robots:
-		if(use_pid_mode):
-			robot.PIDStopMotors()
-			robot.running = False
-		robot.setThrustGetTelem(0, 0) 
-		### robot.downloadTelemetry()
-	lock.release()
+    #set thrust for both motors to 0
+    lock.acquire()
+    for robot in robots:
+        if(use_pid_mode):
+            robot.setVelGetTelem(0,0)
+            robot.PIDStopMotors()
+            robot.running = False
+        else:
+            robot.setThrustGetTelem(0, 0) 
+            ### robot.downloadTelemetry()
+    lock.release()
 
-	#exit RoachBridge
-	xb_safe_exit(xb)
-	return
+    #exit RoachBridge
+    xb_safe_exit(xb)
+    return
 
 def quat_to_eulerDegrees(orientation):
   x=orientation.x
@@ -108,7 +112,7 @@ def quat_to_eulerDegrees(orientation):
   
   return [X,Y,Z] 
 
-def singlestep_to_state(robot_info, mocap_info, old_time, old_state, old_al, old_ar):
+def singlestep_to_state(robot_info, mocap_info, old_time, old_pos, old_al, old_ar, state_representation):
 
 	#dt
     curr_time = robot_info.stamp
@@ -150,13 +154,21 @@ def singlestep_to_state(robot_info, mocap_info, old_time, old_state, old_al, old
 
     #create the state
     if(state_representation=="all"):
-        states = np.array([curr_pos.x, curr_pos.y, curr_pos.z, 
+        state = np.array([curr_pos.x, curr_pos.y, curr_pos.z, 
                                     vel_x, vel_y, vel_z, 
                                     np.cos(r), np.sin(r), np.cos(p), np.sin(p), np.cos(yw), np.sin(yw), 
                                     wx, wy, wz, 
                                     np.cos(al), np.sin(al), np.cos(ar), np.sin(ar), 
                                     vel_al, vel_ar, 
                                     robot_info.bemfL, robot_info.bemfR, robot_info.vBat])
+
+    #save curr as old
+    old_time= copy.deepcopy(curr_time)
+    old_pos=copy.deepcopy(curr_pos)
+    old_al=np.copy(al)
+    old_ar=np.copy(ar)
+
+    return state, old_time, old_pos, old_al, old_ar
 
 def rollout_to_states(robot_info, mocap_info, state_representation):
 
