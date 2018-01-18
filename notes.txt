@@ -1,0 +1,66 @@
+
+
+ALWAYS RUN THIS:
+cd ~/optitrack_workspace
+source devel/setup.bash
+roslaunch mocap_optitrack mocap.launch
+
+
+STOP ROACH:
+source ~/roach_workspace/devel/setup.bash
+cd ~/roach_workspace/src/nn_dynamics_roach/scripts
+python stop_roach.py
+
+
+DIFFDRIVE:
+source ~/roach_workspace/devel/setup.bash
+cd ~/roach_workspace/src/nn_dynamics_roach/scripts
+python diff_drive_controller.py left0
+
+
+COLLECT DATA:
+source ~/roach_workspace/devel/setup.bash
+cd ~/roach_workspace/src/nn_dynamics_roach/scripts
+python automated_data_collect.py 0
+  if using joystick, also run
+    rosrun joy joy_node
+    python mjo.py
+
+
+RUN MB:
+source ~/roach_workspace/devel/setup.bash
+cd ~/roach_workspace/src/nn_dynamics_roach/scripts
+python train_dynamics.py
+
+
+
+################################################# 
+
+After making a msg, must do the following before you can import it:
+(even if it shows up with rosmsg list)
+
+cd ~/roach_workspace
+catkin_make
+
+################################################# 
+
+
+- gyro data or calculate it:
+
+  '''
+  TO DO: angular velocity (calculate, or just use the one from imu)
+  '''
+
+  #r,p,yw vel
+    #euler angles to ang vel
+      #https://physics.stackexchange.com/questions/73961/angular-velocity-expressed-via-euler-angles
+    #quaternions to ang vel
+      #https://www.gamedev.net/forums/topic/543756-quaternion-to-angular-velocity/
+      #omega = 2 * (q2 - q1) * conj( q1 ) / dt
+  #curr_quat = a.pose.orientation
+  #angular_vel_quat = multiply_quat(multiply_quat(2/dt,subtract_quat(curr_quat, old_quat)), conjugate_quat(old_quat))
+  v_r=0
+  v_p=0
+  v_yw=0
+  old_angles = np.copy(angles)
+  old_quat= a.pose.orientation ###is this a shallow copy?
