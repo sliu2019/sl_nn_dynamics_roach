@@ -54,7 +54,7 @@ def main():
     #running
     use_pid_mode = False 
     slow_pid_mode = True
-    serial_port = '/dev/ttyUSB1'
+    serial_port = '/dev/ttyUSB0'
     baud_rate = 57600
     DEFAULT_ADDRS = ['\x00\x01']
 
