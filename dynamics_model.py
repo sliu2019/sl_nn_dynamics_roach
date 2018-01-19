@@ -32,13 +32,14 @@ class Dyn_Model:
         #placeholders
         self.x_ = tf.placeholder(tf_datatype, shape=[None, self.inputSize], name='x') #inputs
         self.z_ = tf.placeholder(tf_datatype, shape=[None, self.outputSize], name='z') #labels
-
+        self.next_z_ = tf.placeholder(tf_datatype, shape=[None, self.outputSize], name='next_z')
         #forward pass
         self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
-                                                num_fc_layers, depth_fc_layers, tf_datatype)
-
+                                                    num_fc_layers, depth_fc_layers, tf_datatype)
+        self.next_nn_output = feedforward_network(self.curr_nn_output, self.inputSize, self.outputSize, 
+                                                    num_fc_layers, depth_fc_layers, tf_datatype)
         #loss
-        self.mse_ = tf.reduce_mean(tf.square(self.z_ - self.curr_nn_output))
+        self.mse_ = tf.reduce_mean(tf.add(tf.square(self.z_ - self.curr_nn_output), tf.square(self.next_z_ - self.next_nn_output)))
 
         # Compute gradients and update parameters
         self.opt = tf.train.AdamOptimizer(learning_rate)
@@ -98,9 +99,13 @@ class Dyn_Model:
                     dataX_batch = np.concatenate((dataX_old_batch, dataX_new_batch))
                     dataZ_batch = np.concatenate((dataZ_old_batch, dataZ_new_batch))
 
+                    data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
+                    dataZ_next = dataZ[data_next_indeces, :]
+
                     #one iteration of feedforward training
                     _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
-                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch})
+                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, 
+                                                                self.next_z_: dataZ_next})
                     training_loss_list.append(loss)
                     avg_loss+= loss
                     num_batches+=1
@@ -112,10 +117,12 @@ class Dyn_Model:
                     #walk through the shuffled new data
                     dataX_batch = dataX_new[batch*batchsize_new_pts:(batch+1)*batchsize_new_pts, :]
                     dataZ_batch = dataZ_new[batch*batchsize_new_pts:(batch+1)*batchsize_new_pts, :]
+                    data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
+                    dataZ_next = dataZ[data_next_indeces, :]
 
                     #one iteration of feedforward training
                     _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
-                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch})
+                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next})
 
                     training_loss_list.append(loss)
                     avg_loss+= loss
@@ -144,8 +151,10 @@ class Dyn_Model:
             # Batch the training data
             dataX_batch = dataX[batch*self.batchsize:(batch+1)*self.batchsize, :]
             dataZ_batch = dataZ[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
+            dataZ_next = dataZ[data_next_indeces, :]
             #one iteration of feedforward training
-            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch})
+            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next})
             avg_old_loss+= loss
             iters_in_batch+=1
         old_loss =  avg_old_loss/iters_in_batch
@@ -157,8 +166,10 @@ class Dyn_Model:
             # Batch the training data
             dataX_batch = dataX_new[batch*self.batchsize:(batch+1)*self.batchsize, :]
             dataZ_batch = dataZ_new[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
+            dataZ_next = dataZ[data_next_indeces, :]
             #one iteration of feedforward training
-            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch})
+            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next})
             avg_new_loss+= loss
             iters_in_batch+=1
         if(iters_in_batch==0):
