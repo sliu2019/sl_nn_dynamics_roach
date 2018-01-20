@@ -41,23 +41,25 @@ from utils import *
 ###############################
 
 task_type='carpet'
-num_rollouts = 10
 
-use_pid_mode = False
+num_rollouts = 10
+rollout_length= 50
+
+use_pid_mode = True
 slow_pid_mode = False
 use_joystick= False
-print_frequency = 10
-
-serial_port = '/dev/ttyUSB1'
+print_frequency = 1
+serial_port = '/dev/ttyUSB0'
 baud_rate = 57600
 DEFAULT_ADDRS = ['\x00\x01']
 frequency_value = 10
-rollout_length= 50
+
 
 #room dimensions
   # x in (-1, 2), y in (-1.25, 1.75)
 center = [0.50, 0.25]
 radius = 1.50
+inner_r = 1.20
 
   # x in (-1.4,2.5)
   # y in (-1.2, 1.8)
@@ -125,7 +127,7 @@ rate = rospy.Rate(frequency_value)
 counter_turn=0
 
 #setup serial, roach bridge, and imu queues
-xb, robots, shared.imu_queues = setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode)
+xb, robots, shared.imu_queues = setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, 1)
 
 #set PID gains
 for robot in robots:
@@ -154,10 +156,12 @@ if not os.path.exists(data_dir):
 ###############################
 ###### PERFORM ROLLOUT ########
 ###############################
+num_run = 0
 
-def run(run_num):
+def run():
   global lock
   global counter_turn
+  global num_run
   start_roach(xb, lock, robots, use_pid_mode)
 
   #init values for the loop below
@@ -165,6 +169,9 @@ def run(run_num):
   selected_action=[0,0]
   list_robot_info=[]
   list_mocap_info=[]
+
+  reset = False
+  straight = False
 
   while(step<rollout_length):
 
@@ -199,6 +206,7 @@ def run(run_num):
     ##############################################
 
     got_data=False
+    start_time = time.time()
     while(got_data==False):
       for q in shared.imu_queues.values():
         #while loop, because sometimes, you get multiple things from robot
@@ -207,77 +215,131 @@ def run(run_num):
           d = q.get()
           '''this used to be encL, encR, gyroX, gyroY, gyroZ, bemfL, bemfR, Vbatt... TO DO: check what this is + fix this comment'''
           got_data=True
+      if time.time() - start_time > 1:
+        reset = True
+        break
 
-    if(got_data):
-      robot_info = velroach_msg()
-      robot_info.stamp = rospy.Time.now()
-      robot_info.curLeft = selected_action[0]
-      robot_info.curRight = selected_action[1]
-      robot_info.posL = d[2]
-      robot_info.posR = d[3]
-      robot_info.gyroX = d[8]
-      robot_info.gyroY = d[9]
-      robot_info.gyroZ = d[10]
-      robot_info.bemfL = d[14]
-      robot_info.bemfR = d[15]
-      robot_info.vBat = d[16]
-      publish_robotinfo.publish(robot_info)
-      if(shouldPrint):
-        print "    got state"
+    if not reset:
+      if(got_data):
+        robot_info = velroach_msg()
+        robot_info.stamp = rospy.Time.now()
+        robot_info.curLeft = selected_action[0]
+        robot_info.curRight = selected_action[1]
+        robot_info.posL = d[2]
+        robot_info.posR = d[3]
+        robot_info.gyroX = d[8]
+        robot_info.gyroY = d[9]
+        robot_info.gyroZ = d[10]
+        robot_info.bemfL = d[14]
+        robot_info.bemfR = d[15]
+        robot_info.vBat = d[16]
+        publish_robotinfo.publish(robot_info)
+        if(shouldPrint):
+          print "    got state"
 
-    list_robot_info.append(robot_info)
-    list_mocap_info.append(mocap_info)
+      list_robot_info.append(robot_info)
+      list_mocap_info.append(mocap_info)
 
-    ########################
-    #### COMPUTE ACTION ####
-    ########################
+      ########################
+      #### COMPUTE ACTION ####
+      ########################
 
-    if(use_joystick==False):
-      xpos = mocap_info.pose.position.x
-      ypos = mocap_info.pose.position.y
-      distance = np.sqrt((xpos-center[0])**2 + (ypos-center[1])**2)
+      if(use_joystick==False):
+        xpos = mocap_info.pose.position.x
+        ypos = mocap_info.pose.position.y
+        distance = np.sqrt((xpos-center[0])**2 + (ypos-center[1])**2)
 
-      #random action
-      if (distance <= radius):
-        selected_action[0] = npr.uniform(MIN_LEFT, MAX_LEFT)
-        selected_action[1] = npr.uniform(MIN_RIGHT, MAX_RIGHT)
-      #force a turn to stay in region
+        #random action
+        if (distance <= radius and not straight):  # inside the circle
+          selected_action[0] = npr.uniform(MIN_LEFT, MAX_LEFT)
+          selected_action[1] = npr.uniform(MIN_RIGHT, MAX_RIGHT)
+        #force a turn to stay in region
+        else:                     # outside the circle
+          if straight:
+            selected_action[0] = (MAX_LEFT+MIN_LEFT)/2.0
+            selected_action[1] = (MAX_RIGHT+MIN_RIGHT)/2.0
+            if distance < inner_r:
+              straight = False
+          else:
+            def turn_left():
+              # turn LEFT
+              selected_action[0] = npr.uniform(MIN_LEFT, MIN_LEFT+(MAX_LEFT-MIN_LEFT)/3.0)
+              selected_action[1] = npr.uniform(MAX_RIGHT-(MAX_RIGHT-MIN_RIGHT)/3.0, MAX_RIGHT)
+            
+            def turn_right():
+              # turn RIGHT
+              selected_action[1] = npr.uniform(MIN_RIGHT, MIN_RIGHT+(MAX_RIGHT-MIN_RIGHT)/3.0)
+              selected_action[0] = npr.uniform(MAX_LEFT-(MAX_LEFT-MIN_LEFT)/3.0, MAX_LEFT)
+
+            def go_straight():
+              selected_action[0] = (MAX_LEFT+MIN_LEFT)/2.0
+              selected_action[1] = (MAX_RIGHT+MIN_RIGHT)/2.0
+              straight = True
+
+            [_,_,theta] = quat_to_eulerDegrees(mocap_info.pose.orientation)
+            if xpos > center[0] and ypos > center[1]:   #  first quadrant
+              print "first quad"
+              if -180 < theta < -90:
+                go_straight()
+              elif 45 < theta < 180:
+                turn_left()
+              else:
+                turn_right()
+            elif xpos < center[0] and ypos > center[1]: # second quadrant
+              print "second quad"
+              if -90 < theta < 0:
+                go_straight()
+              elif 0 < theta < 135:
+                turn_right()
+              else:
+                turn_left()
+            elif xpos < center[0] and ypos < center[1]: #  third quadrant
+              print "third quad"
+              if 0 < theta < 90:
+                go_straight()
+              elif -135 < theta < 0:
+                turn_left()
+              else:
+                turn_right()
+            elif xpos > center[0] and ypos < center[1]: # fourth quadrant
+              print "fourth quad"
+              if 90 < theta < 180:
+                go_straight()
+              elif -45 < theta < 90:
+                turn_left()
+              else:
+                turn_right()
+
       else:
-        if(counter_turn%2==0):
-          print("TURN LEFT")
-          # turn LEFT
-          selected_action[0] = npr.uniform(MIN_LEFT, MIN_LEFT+(MAX_LEFT-MIN_LEFT)/3.0)
-          selected_action[1] = npr.uniform(MAX_RIGHT-(MAX_RIGHT-MIN_RIGHT)/3.0, MAX_RIGHT)
-        else:
-          print("TURN RIGHT")
-          # turn RIGHT
-          selected_action[1] = npr.uniform(MIN_RIGHT, MIN_RIGHT+(MAX_RIGHT-MIN_RIGHT)/3.0)
-          selected_action[0] = npr.uniform(MAX_LEFT-(MAX_LEFT-MIN_LEFT)/3.0, MAX_LEFT)
-
+        selected_action = command_from_joystick
+          
+      #wait for some time
+      rate.sleep()
+      step+=1
     else:
-      selected_action = command_from_joystick
-        
-    #wait for some time
-    rate.sleep()
-    step+=1
+      break
 
-  ########################
-  ##### SAVE ROLLOUT #####
-  ########################
+  if not reset:
+    ########################
+    ##### SAVE ROLLOUT #####
+    ########################
 
-  robot_file=data_dir + "/" + str(run_num) + '_robot_info.obj'
-  mocap_file=data_dir + "/" + str(run_num) + '_mocap_info.obj'
+    robot_file=data_dir + "/" + str(num_run) + '_robot_info.obj'
+    mocap_file=data_dir + "/" + str(num_run) + '_mocap_info.obj'
 
-  pickle.dump(list_robot_info,open(robot_file,'w')) 
-  pickle.dump(list_mocap_info,open(mocap_file,'w'))
+    pickle.dump(list_robot_info,open(robot_file,'w')) 
+    pickle.dump(list_mocap_info,open(mocap_file,'w'))
+
+    num_run += 1
 
   ########################
   ###### STOP MOVING #####
   ########################
 
   counter_turn+=1
-  print 'DONE WITH ROLLOUT ', run_num, '\n\n'
+  print 'DONE WITH ROLLOUT ', num_run, '\n\n'
   stop_roach(lock, robots, use_pid_mode)
+
 
 ##########################
 #### COLLECT ROLLOUTS ####
@@ -285,10 +347,10 @@ def run(run_num):
 
 if __name__ == '__main__':
   try:
-    j = int(sys.argv[1])
-    for run_num in range(j, j + num_rollouts):
-      print "******** rollout # ", run_num
-      run(run_num)
+    j = 0 #######int(sys.argv[1])
+    for _ in range(j, j + num_rollouts):
+      print "******** rollout # ", num_run
+      run()
       time.sleep(1)
 
     print('Stopping robot and exiting...')

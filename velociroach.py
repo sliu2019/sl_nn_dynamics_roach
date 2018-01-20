@@ -92,6 +92,10 @@ class Velociroach:
     def setVelGetTelem(self, vel_left, vel_right):
         mydata = [vel_left, vel_right]
         self.tx(0, command.SET_VEL_GET_IMU, pack('hh',*mydata))
+
+    def setPIDOutputChannel(self, top):
+        mydata = [top]
+        self.tx(0, command.SET_PID_OUTPUT_CHANNEL, pack('h',*mydata))
     
     def setThrustOpenLoop(self, thrust_left=0, thrust_right=0, run_time=0):
 
