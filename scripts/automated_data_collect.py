@@ -40,7 +40,7 @@ from utils import *
 ####### VARS TO SPECIFY #######
 ###############################
 
-task_type='carpet'
+task_type='pebbles'
 
 num_rollouts = 10
 rollout_length= 50
@@ -57,9 +57,9 @@ frequency_value = 10
 
 #room dimensions
   # x in (-1, 2), y in (-1.25, 1.75)
-center = [0.50, 0.25]
-radius = 1.50
-inner_r = 1.20
+center = [0.20, 0.25]
+radius = 1.0
+inner_r = 0.8
 
   # x in (-1.4,2.5)
   # y in (-1.2, 1.8)
@@ -68,8 +68,8 @@ inner_r = 1.20
 ######## MOTOR LIMITS #########
 ###############################
 
-MIN_LEFT = 800
-MIN_RIGHT = 800
+MIN_LEFT = 2000
+MIN_RIGHT = 2000
 MAX_LEFT = 2600
 MAX_RIGHT = 2600
 
@@ -103,6 +103,7 @@ def callback_joystick(command):
 
     lock.acquire()
     command_from_joystick = convert_command(command)
+    print command_from_joystick
     lock.release()
   else:
     junk=1
@@ -127,7 +128,7 @@ rate = rospy.Rate(frequency_value)
 counter_turn=0
 
 #setup serial, roach bridge, and imu queues
-xb, robots, shared.imu_queues = setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, 1)
+xb, robots, shared.imu_queues = setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, 0)
 
 #set PID gains
 for robot in robots:
@@ -337,7 +338,7 @@ def run():
   ########################
 
   counter_turn+=1
-  print 'DONE WITH ROLLOUT ', num_run, '\n\n'
+  print 'COMPLETE ROLLOUT ', num_run, '\n\n'
   stop_roach(lock, robots, use_pid_mode)
 
 
@@ -348,8 +349,8 @@ def run():
 if __name__ == '__main__':
   try:
     j = 0 #######int(sys.argv[1])
-    for _ in range(j, j + num_rollouts):
-      print "******** rollout # ", num_run
+    for run_num in range(j, j + num_rollouts):
+      print "******** trial # ", run_num
       run()
       time.sleep(1)
 

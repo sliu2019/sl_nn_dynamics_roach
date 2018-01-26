@@ -43,7 +43,7 @@ pktFormat = { \
     command.ECHO:                   'c' ,\
     command.SET_VEL_PROFILE:        '8h' ,\
     command.WHO_AM_I:               '', \
-    command.ZERO_POS:               '=2l', \
+    command.ZERO_POS:               '3h', \
     }
 
                

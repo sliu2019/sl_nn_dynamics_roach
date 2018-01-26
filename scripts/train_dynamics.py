@@ -48,24 +48,37 @@ def main():
 
     #saving directories
     run_num=77                                          #directory for saving everything
-    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
+    desired_shape_for_traj = "right"                     #straight, left, right, circle_left, zigzag, figure8
     traj_save_path= desired_shape_for_traj + str(0)     #directory name inside run_num directory
     
     #running
-    use_pid_mode = False 
-    slow_pid_mode = True
+    use_pid_mode = True 
+    slow_pid_mode = False
     serial_port = '/dev/ttyUSB0'
     baud_rate = 57600
     DEFAULT_ADDRS = ['\x00\x01']
 
     #training data
-    filename_trainingdata='/data_collection/carpet_2018_01_18_12_08_08'
-    training_rollouts=np.arange(9)+0
-    validation_rollouts=[9]
+    # filename_trainingdata='/data_collection/carpet_2018_01_18_12_08_08'
+    # training_rollouts=np.arange(9)+0
+    # validation_rollouts=[9]
+
+    training_ratio = 0.9
+    data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
+    path_lst = []
+    for subdir, dirs, files in os.walk(data_path):
+        for file in files:
+            path_lst.append(os.path.join(subdir, file))
+    path_lst.sort()
+    training_rollouts = int(len(path_lst)*training_ratio)
+    if training_rollouts%2 != 0:
+        training_rollouts -= 1
+    validation_rollouts = len(path_lst) - training_rollouts
+
 
     #training
-    use_existing_data = False
-    train_now = True
+    use_existing_data = True
+    train_now = False
     nEpoch_initial = 75
     nEpoch = 20
     state_representation = "all" #all, only_yaw, no_legs, no_legs_gyro, only_mocap
@@ -117,7 +130,7 @@ def main():
     ##################################
 
     #directory from which to get training data
-    data_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + filename_trainingdata
+    # data_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + filename_trainingdata
 
     #directories for saving data
     save_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/run_'+ str(run_num)
@@ -128,6 +141,8 @@ def main():
         os.makedirs(save_dir+'/data')
         os.makedirs(save_dir+'/saved_forwardsim')
         os.makedirs(save_dir+'/saved_trajfollow')
+        os.makedirs(save_dir+'/'+traj_save_path)
+    if not os.path.exists(save_dir+'/'+traj_save_path):
         os.makedirs(save_dir+'/'+traj_save_path)
 
     ##return
@@ -155,7 +170,8 @@ def main():
     if(make_training_dataset_noisy):
         noiseToSignal = 0.01
 
-    num_rollouts_val = len(validation_rollouts)
+    # num_rollouts_val = len(validation_rollouts)
+    num_rollouts_val = validation_rollouts
 
 
     #################################################
@@ -209,11 +225,14 @@ def main():
             dataX=[]
             dataY=[]
             dataZ=[]
-            for rollout_counter in training_rollouts:
+            # for rollout_counter in training_rollouts:
+            for i in range(training_rollouts/2):
 
                 #read in data from 1 rollout
-                robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
-                mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                mocap_file = path_lst[2*i]
+                robot_file = path_lst[2*i+1]
                 robot_info = pickle.load(open(robot_file,'r'))
                 mocap_info = pickle.load(open(mocap_file,'r'))
 
@@ -244,11 +263,14 @@ def main():
 
             states_val = []
             controls_val = []
-            for rollout_counter in validation_rollouts:
+            # for rollout_counter in validation_rollouts:
+            for i in range(validation_rollouts/2):
 
                 #read in data from 1 rollout
-                robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
-                mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                mocap_file = path_lst[training_rollouts + 2*i]
+                robot_file = path_lst[training_rollouts + 2*i+1]
                 robot_info = pickle.load(open(robot_file,'r'))
                 mocap_info = pickle.load(open(mocap_file,'r'))
 
@@ -414,83 +436,83 @@ def main():
             ## Validation Metrics
             #####################################
 
-            print("\n#####################################")
-            print("Calculating Validation Metrics")
-            print("#####################################\n")
+            # print("\n#####################################")
+            # print("Calculating Validation Metrics")
+            # print("#####################################\n")
 
-            validation_inputs_states = []
-            labels_1step = []
-            labels_5step = []
-            labels_10step = []
-            labels_15step = []
-            controls_15step=[]
-            max_val_steps = 15
+            # validation_inputs_states = []
+            # labels_1step = []
+            # labels_5step = []
+            # labels_10step = []
+            # labels_15step = []
+            # controls_15step=[]
+            # max_val_steps = 15
 
-            #####################################
-            ## make the arrays to pass into forward sim
-            #####################################
+            # #####################################
+            # ## make the arrays to pass into forward sim
+            # #####################################
 
-            for i in range(num_rollouts_val):
+            # for i in range(num_rollouts_val):
 
-                length_curr_rollout = states_val[i].shape[0]
+            #     length_curr_rollout = states_val[i].shape[0]
 
-                if(length_curr_rollout>max_val_steps):
+            #     if(length_curr_rollout>max_val_steps):
 
-                    #########################
-                    #### STATE INPUTS TO NN
-                    #########################
+            #         #########################
+            #         #### STATE INPUTS TO NN
+            #         #########################
 
-                    ## take all except the last max_val_steps pts from each rollout
-                    validation_inputs_states.append(states_val[i][0:length_curr_rollout-max_val_steps])
+            #         ## take all except the last max_val_steps pts from each rollout
+            #         validation_inputs_states.append(states_val[i][0:length_curr_rollout-max_val_steps])
 
-                    #########################
-                    #### CONTROL INPUTS TO NN
-                    #########################
+            #         #########################
+            #         #### CONTROL INPUTS TO NN
+            #         #########################
 
-                    #max_val_steps step controls
-                    list_15 = []
-                    for j in range(max_val_steps):
-                        list_15.append(controls_val[i][0+j:length_curr_rollout-max_val_steps+j])
-                        ##for states 0:x, first apply acs 0:x, then apply acs 1:x+1, then apply acs 2:x+2, etc...
-                    list_15=np.array(list_15) #100xstepsx2
-                    list_15= np.swapaxes(list_15,0,1) #stepsx100x2
-                    controls_15step.append(list_15)
+            #         #max_val_steps step controls
+            #         list_15 = []
+            #         for j in range(max_val_steps):
+            #             list_15.append(controls_val[i][0+j:length_curr_rollout-max_val_steps+j])
+            #             ##for states 0:x, first apply acs 0:x, then apply acs 1:x+1, then apply acs 2:x+2, etc...
+            #         list_15=np.array(list_15) #100xstepsx2
+            #         list_15= np.swapaxes(list_15,0,1) #stepsx100x2
+            #         controls_15step.append(list_15)
 
-                    #########################
-                    #### STATE LABELS- compare these to the outputs of NN (forward sim)
-                    #########################
-                    labels_1step.append(states_val[i][0+1:length_curr_rollout-max_val_steps+1])
-                    labels_5step.append(states_val[i][0+5:length_curr_rollout-max_val_steps+5])
-                    labels_10step.append(states_val[i][0+10:length_curr_rollout-max_val_steps+10])
-                    labels_15step.append(states_val[i][0+15:length_curr_rollout-max_val_steps+15])
+            #         #########################
+            #         #### STATE LABELS- compare these to the outputs of NN (forward sim)
+            #         #########################
+            #         labels_1step.append(states_val[i][0+1:length_curr_rollout-max_val_steps+1])
+            #         labels_5step.append(states_val[i][0+5:length_curr_rollout-max_val_steps+5])
+            #         labels_10step.append(states_val[i][0+10:length_curr_rollout-max_val_steps+10])
+            #         labels_15step.append(states_val[i][0+15:length_curr_rollout-max_val_steps+15])
 
-            validation_inputs_states = np.concatenate(validation_inputs_states)
-            controls_15step = np.concatenate(controls_15step)
-            labels_1step = np.concatenate(labels_1step)
-            labels_5step = np.concatenate(labels_5step)
-            labels_10step = np.concatenate(labels_10step)
-            labels_15step = np.concatenate(labels_15step)
+            # validation_inputs_states = np.concatenate(validation_inputs_states)
+            # controls_15step = np.concatenate(controls_15step)
+            # labels_1step = np.concatenate(labels_1step)
+            # labels_5step = np.concatenate(labels_5step)
+            # labels_10step = np.concatenate(labels_10step)
+            # labels_15step = np.concatenate(labels_15step)
 
-            #####################################
-            ## pass into forward sim, to make predictions
-            #####################################
+            # #####################################
+            # ## pass into forward sim, to make predictions
+            # #####################################
 
-            many_in_parallel=True
-            predicted_15step = dyn_model.do_forward_sim(validation_inputs_states, controls_15step, many_in_parallel, None, None)
+            # many_in_parallel=True
+            # predicted_15step = dyn_model.do_forward_sim(validation_inputs_states, controls_15step, many_in_parallel, None, None)
 
-            #####################################
-            ## Calculate validation metrics (mse loss between predicted and true)
-            #####################################
+            # #####################################
+            # ## Calculate validation metrics (mse loss between predicted and true)
+            # #####################################
 
-            array_meanx = np.tile(np.expand_dims(mean_x, axis=0),(labels_1step.shape[0],1))
-            array_stdx = np.tile(np.expand_dims(std_x, axis=0),(labels_1step.shape[0],1))
+            # array_meanx = np.tile(np.expand_dims(mean_x, axis=0),(labels_1step.shape[0],1))
+            # array_stdx = np.tile(np.expand_dims(std_x, axis=0),(labels_1step.shape[0],1))
 
-            error_1step = np.mean(np.square(np.nan_to_num(np.divide(predicted_15step[1]-array_meanx,array_stdx)) -np.nan_to_num(np.divide(labels_1step-array_meanx,array_stdx))))
-            error_5step = np.mean(np.square(np.nan_to_num(np.divide(predicted_15step[5]-array_meanx,array_stdx)) -np.nan_to_num(np.divide(labels_5step-array_meanx,array_stdx))))
-            error_10step = np.mean(np.square(np.nan_to_num(np.divide(predicted_15step[10]-array_meanx,array_stdx)) -np.nan_to_num(np.divide(labels_10step-array_meanx,array_stdx))))
-            error_15step = np.mean(np.square(np.nan_to_num(np.divide(predicted_15step[15]-array_meanx,array_stdx)) -np.nan_to_num(np.divide(labels_15step-array_meanx,array_stdx))))
+            # error_1step = np.mean(np.square(np.nan_to_num(np.divide(predicted_15step[1]-array_meanx,array_stdx)) -np.nan_to_num(np.divide(labels_1step-array_meanx,array_stdx))))
+            # error_5step = np.mean(np.square(np.nan_to_num(np.divide(predicted_15step[5]-array_meanx,array_stdx)) -np.nan_to_num(np.divide(labels_5step-array_meanx,array_stdx))))
+            # error_10step = np.mean(np.square(np.nan_to_num(np.divide(predicted_15step[10]-array_meanx,array_stdx)) -np.nan_to_num(np.divide(labels_10step-array_meanx,array_stdx))))
+            # error_15step = np.mean(np.square(np.nan_to_num(np.divide(predicted_15step[15]-array_meanx,array_stdx)) -np.nan_to_num(np.divide(labels_15step-array_meanx,array_stdx))))
 
-            print "\n\n", "Multistep error values: ", error_1step, error_5step, error_10step, error_15step
+            # print "\n\n", "Multistep error values: ", error_1step, error_5step, error_10step, error_15step
 
             #####################################
             ## Perform 1 forward simulation

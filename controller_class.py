@@ -104,7 +104,7 @@ class Controller(object):
       self.rate = rospy.Rate(self.frequency_value)
 
       #setup serial, roach bridge, and imu queues
-      self.xb, self.robots, shared.imu_queues = setup_roach(self.serial_port, self.baud_rate, self.DEFAULT_ADDRS, self.use_pid_mode)
+      self.xb, self.robots, shared.imu_queues = setup_roach(self.serial_port, self.baud_rate, self.DEFAULT_ADDRS, self.use_pid_mode, 1)
 
       #set PID gains
       for robot in self.robots:
