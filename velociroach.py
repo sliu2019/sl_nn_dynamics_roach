@@ -89,9 +89,9 @@ class Velociroach:
         mydata = [thrust_left, thrust_right]
         self.tx(0, command.SET_THRUST_GET_IMU, pack('hh',*mydata))
 
-    def setVelGetTelem(self, vel_left, vel_right):
-        mydata = [vel_left, vel_right]
-        self.tx(0, command.SET_VEL_GET_IMU, pack('hh',*mydata))
+    def setVelGetTelem(self, vel_left, vel_right, vel_fan):
+        mydata = [vel_left, vel_right, vel_fan]
+        self.tx(0, command.SET_VEL_GET_IMU, pack('hhh',*mydata))
 
     def setPIDOutputChannel(self, top):
         mydata = [top]
@@ -144,6 +144,17 @@ class Velociroach:
         self.clAnnounce()
         print "Starting timed run of",duration," ms"
         self.tx( 0, command.START_TIMED_RUN, pack('h', duration))
+        time.sleep(0.05)
+
+    def startFans(self):
+        self.tx(0, command.START_FANS, "P")
+        print "STARTING FANS"
+        print command.START_FANS
+        time.sleep(0.05)
+
+    def stopFans(self):
+        self.tx(0, command.STOP_FANS)
+        print "STOPPING FANS"
         time.sleep(0.05)
 
         
