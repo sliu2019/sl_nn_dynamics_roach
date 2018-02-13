@@ -44,8 +44,23 @@ def setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, top):
 		shared.imu_queues[robots[0].DEST_ADDR_int] = Queue()
 
 		print("Done setting up RoachBridge.\n")
-
+	print(xb)
 	return xb, robots, shared.imu_queues
+
+def start_fans(lock, robot):
+	lock.acquire()
+	for i in range(3):
+		robot.startFans()
+		time.sleep(1)
+	lock.release()
+
+def stop_fans(lock, robot):
+	lock.acquire()
+	for i in range(3):
+		robot.stopFans()
+		time.sleep(1)
+	lock.release()
+
 
 def start_roach(xb, lock, robots, use_pid_mode):
 
@@ -56,6 +71,8 @@ def start_roach(xb, lock, robots, use_pid_mode):
 			robot.PIDStartMotors()
 			robot.running = True
 		robot.setThrustGetTelem(0, 0) 
+
+		
 	lock.release()
 	return
 

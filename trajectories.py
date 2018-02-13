@@ -28,15 +28,15 @@ def make_trajectory(shape, curr_state, x_index, y_index):
 
     if(shape=="right"):
         my_list.append(np.array([curr_x, curr_y]))
-        my_list.append(np.array([curr_x+1, curr_y]))
-        my_list.append(np.array([curr_x+1.8, curr_y-0.2]))
-        my_list.append(np.array([curr_x+2, curr_y-1]))
-        my_list.append(np.array([curr_x+2, curr_y-2]))
-        my_list.append(np.array([curr_x+2, curr_y-3]))
-        my_list.append(np.array([curr_x+2, curr_y-4]))
-        my_list.append(np.array([curr_x+2, curr_y-5]))
-        my_list.append(np.array([curr_x+2, curr_y-6]))
-        my_list.append(np.array([curr_x+2, curr_y-7]))
+        my_list.append(np.array([curr_x+0.5, curr_y]))
+        my_list.append(np.array([curr_x+0.8, curr_y-0.2]))
+        my_list.append(np.array([curr_x+1, curr_y-1]))
+        my_list.append(np.array([curr_x+1, curr_y-2]))
+        my_list.append(np.array([curr_x+1, curr_y-3]))
+        my_list.append(np.array([curr_x+1, curr_y-4]))
+        my_list.append(np.array([curr_x+1, curr_y-5]))
+        my_list.append(np.array([curr_x+1, curr_y-6]))
+        my_list.append(np.array([curr_x+1, curr_y-7]))
 
     if(shape=="circle_left"):
         my_list.append(np.array([curr_x, curr_y]))

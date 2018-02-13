@@ -80,5 +80,6 @@ SET_MOTOR_MODE          =   0x94
 SET_THRUST_GET_IMU 		= 	0x95
 SET_VEL_GET_IMU 		= 	0x96
 SET_PID_OUTPUT_CHANNEL 	=	0x97
-
+START_FANS				=	0x21
+STOP_FANS				=	0x22
 # CMD values of 0xF0(240) - 0xFF(255) are reserved for future use

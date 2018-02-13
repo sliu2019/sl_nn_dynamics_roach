@@ -146,6 +146,17 @@ class Velociroach:
         self.tx( 0, command.START_TIMED_RUN, pack('h', duration))
         time.sleep(0.05)
 
+    def startFans(self):
+        self.tx(0, command.START_FANS, "P")
+        print "STARTING FANS"
+        print command.START_FANS
+        time.sleep(0.05)
+
+    def stopFans(self):
+        self.tx(0, command.STOP_FANS)
+        print "STOPPING FANS"
+        time.sleep(0.05)
+
         
     def findFileName(self):   
         # Construct filename

@@ -36,16 +36,16 @@ class Dyn_Model:
         #forward pass
         self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
                                                     num_fc_layers, depth_fc_layers, tf_datatype)
-        self.nn_output2 = feedforward_network(self.curr_nn_output, self.inputSize, self.outputSize, 
-                                                    num_fc_layers, depth_fc_layers, tf_datatype)
-        self.nn_output3 = feedforward_network(self.nn_output2, self.inputSize, self.outputSize, 
-                                                    num_fc_layers, depth_fc_layers, tf_datatype)
-        self.nn_output4 = feedforward_network(self.nn_output3, self.inputSize, self.outputSize, 
-                                                    num_fc_layers, depth_fc_layers, tf_datatype)
-        # loss
-        self.mse_ = tf.reduce_mean(tf.add_n([tf.square(self.z_ - self.curr_nn_output), tf.square(self.next_z_[:,0] - self.nn_output2),
-                                            tf.square(self.next_z_[:,1] - self.nn_output3), tf.square(self.next_z_[:,2] - self.nn_output4)]))
-        # self.mse_ = tf.reduce_mean(tf.square(self.z_ - self.curr_nn_output))
+        # self.nn_output2 = feedforward_network(self.curr_nn_output, self.inputSize, self.outputSize, 
+        #                                             num_fc_layers, depth_fc_layers, tf_datatype)
+        # self.nn_output3 = feedforward_network(self.nn_output2, self.inputSize, self.outputSize, 
+        #                                             num_fc_layers, depth_fc_layers, tf_datatype)
+        # self.nn_output4 = feedforward_network(self.nn_output3, self.inputSize, self.outputSize, 
+        #                                             num_fc_layers, depth_fc_layers, tf_datatype)
+        # # loss
+        # self.mse_ = tf.reduce_mean(tf.add_n([tf.square(self.z_ - self.curr_nn_output), tf.square(self.next_z_[:,0] - self.nn_output2),
+        #                                     tf.square(self.next_z_[:,1] - self.nn_output3), tf.square(self.next_z_[:,2] - self.nn_output4)]))
+        self.mse_ = tf.reduce_mean(tf.square(self.z_ - self.curr_nn_output))
 
         # Compute gradients and update parameters
         self.opt = tf.train.AdamOptimizer(learning_rate)

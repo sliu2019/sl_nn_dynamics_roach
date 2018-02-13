@@ -10,6 +10,8 @@ from geometry_msgs.msg import PointStamped
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Joy
 import copy 
+from Queue import Queue
+
 import sys
 import tensorflow as tf
 import signal
@@ -40,13 +42,13 @@ from utils import *
 ####### VARS TO SPECIFY #######
 ###############################
 
-task_type='pebbles'
+task_type='carpet'
 
 num_rollouts = 10
 rollout_length= 50
 
 use_pid_mode = True
-slow_pid_mode = False
+slow_pid_mode = True
 use_joystick= False
 print_frequency = 1
 serial_port = '/dev/ttyUSB0'
@@ -57,9 +59,10 @@ frequency_value = 10
 
 #room dimensions
   # x in (-1, 2), y in (-1.25, 1.75)
-center = [0.20, 0.25]
-radius = 1.0
-inner_r = 0.8
+center = [0.55, 0.05] #[0.20, 0.25]
+radius = 0.8 #0.6
+inner_r = 0.5 #0.3
+# outer_r = 0.7
 
   # x in (-1.4,2.5)
   # y in (-1.2, 1.8)
@@ -67,18 +70,24 @@ inner_r = 0.8
 ###############################
 ######## MOTOR LIMITS #########
 ###############################
+# thrust val
+MIN_LEFT  = 1200
+MIN_RIGHT = 1200
+MAX_LEFT  = 2100
+MAX_RIGHT = 2100
 
-MIN_LEFT = 2000
-MIN_RIGHT = 2000
-MAX_LEFT = 2600
-MAX_RIGHT = 2600
+# pid val
+# MIN_LEFT  = 2000
+# MIN_RIGHT = 2000
+# MAX_LEFT  = 2600
+# MAX_RIGHT = 2600
 
 if(use_pid_mode):
   if(slow_pid_mode):
     MIN_LEFT = 2*math.pow(2,16)*0.001
     MIN_RIGHT = 2*math.pow(2,16)*0.001 
-    MAX_LEFT = 6*math.pow(2,16)*0.001
-    MAX_RIGHT = 6*math.pow(2,16)*0.001
+    MAX_LEFT = 9*math.pow(2,16)*0.001
+    MAX_RIGHT = 9*math.pow(2,16)*0.001
   else:
     MIN_LEFT = 4*math.pow(2,16)*0.001
     MIN_RIGHT = 4*math.pow(2,16)*0.001
@@ -89,6 +98,26 @@ if(use_pid_mode):
 ###############################
 ######## HELPER FUNCS #########
 ###############################
+
+#If leg positions 
+def check_is_stuck(queue, llp, rlp):
+  legScale = 95.8738e-6
+
+  if queue.qsize() != 20:
+    queue.put([llp, rlp])
+    return False
+
+  old = queue.get(0)
+  ollp = old[0]
+  orlp = old[1]
+
+  if math.fabs(ollp - llp) * legScale < 2 * np.pi:
+    return True
+  if math.fabs(orlp - rlp) * legScale < 2 * np.pi:
+    return True
+  queue.put([llp, rlp])
+  return False
+
 
 #callback for mocap info
 def callback_mocap(data):
@@ -128,7 +157,7 @@ rate = rospy.Rate(frequency_value)
 counter_turn=0
 
 #setup serial, roach bridge, and imu queues
-xb, robots, shared.imu_queues = setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, 0)
+xb, robots, shared.imu_queues = setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, 1)
 
 #set PID gains
 for robot in robots:
@@ -165,6 +194,8 @@ def run():
   global num_run
   start_roach(xb, lock, robots, use_pid_mode)
 
+  queue = Queue()
+
   #init values for the loop below
   step=0
   selected_action=[0,0]
@@ -188,7 +219,7 @@ def run():
 
     lock.acquire()
     for robot in robots:
-
+      # start_fans(lock, robot)
       #select action to send
       ##send_action = [0, 0]
       send_action = np.copy(selected_action)
@@ -237,6 +268,9 @@ def run():
         publish_robotinfo.publish(robot_info)
         if(shouldPrint):
           print "    got state"
+        if check_is_stuck(queue, d[2], d[3]):
+          stop_and_exit_roach(xb, lock, robots, use_pid_mode)
+          return
 
       list_robot_info.append(robot_info)
       list_mocap_info.append(mocap_info)
@@ -251,11 +285,12 @@ def run():
         distance = np.sqrt((xpos-center[0])**2 + (ypos-center[1])**2)
 
         #random action
-        if (distance <= radius and not straight):  # inside the circle
+        if (distance <= radius and not straight):  # inside the big circle
           selected_action[0] = npr.uniform(MIN_LEFT, MAX_LEFT)
           selected_action[1] = npr.uniform(MIN_RIGHT, MAX_RIGHT)
         #force a turn to stay in region
-        else:                     # outside the circle
+
+        else:                     # outside the big circle
           if straight:
             selected_action[0] = (MAX_LEFT+MIN_LEFT)/2.0
             selected_action[1] = (MAX_RIGHT+MIN_RIGHT)/2.0
@@ -264,17 +299,26 @@ def run():
           else:
             def turn_left():
               # turn LEFT
-              selected_action[0] = npr.uniform(MIN_LEFT, MIN_LEFT+(MAX_LEFT-MIN_LEFT)/3.0)
-              selected_action[1] = npr.uniform(MAX_RIGHT-(MAX_RIGHT-MIN_RIGHT)/3.0, MAX_RIGHT)
+              print "LEFT turn"
+              selected_action[0] = npr.uniform(MIN_LEFT, MIN_LEFT+100.0)
+              selected_action[1] = npr.uniform(MAX_RIGHT-100.0, MAX_RIGHT)
+              # selected_action[0] = npr.uniform(MIN_LEFT, MIN_LEFT+(MAX_LEFT-MIN_LEFT)/3.0)
+              # selected_action[1] = npr.uniform(MAX_RIGHT-(MAX_RIGHT-MIN_RIGHT)/3.0, MAX_RIGHT)
             
             def turn_right():
               # turn RIGHT
-              selected_action[1] = npr.uniform(MIN_RIGHT, MIN_RIGHT+(MAX_RIGHT-MIN_RIGHT)/3.0)
-              selected_action[0] = npr.uniform(MAX_LEFT-(MAX_LEFT-MIN_LEFT)/3.0, MAX_LEFT)
+              print "RIGHT turn"
+              selected_action[1] = npr.uniform(MIN_RIGHT, MIN_RIGHT+100.0)
+              selected_action[0] = npr.uniform(MAX_LEFT-100.0, MAX_LEFT)
+              # selected_action[1] = npr.uniform(MIN_RIGHT, MIN_RIGHT+(MAX_RIGHT-MIN_RIGHT)/3.0)
+              # selected_action[0] = npr.uniform(MAX_LEFT-(MAX_LEFT-MIN_LEFT)/3.0, MAX_LEFT)
 
             def go_straight():
-              selected_action[0] = (MAX_LEFT+MIN_LEFT)/2.0
-              selected_action[1] = (MAX_RIGHT+MIN_RIGHT)/2.0
+              print "go STRAIGHT"
+              mean = (MAX_LEFT+MIN_LEFT)/2.0
+              lb, ub = mean-(MAX_LEFT-MIN_LEFT)/6.0, mean+(MAX_LEFT-MIN_LEFT)/6.0
+              selected_action[0] = npr.uniform(mean-lb, mean+ub)
+              selected_action[1] = npr.uniform(mean-lb, mean+ub)
               straight = True
 
             [_,_,theta] = quat_to_eulerDegrees(mocap_info.pose.orientation)
@@ -349,12 +393,14 @@ def run():
 if __name__ == '__main__':
   try:
     j = 0 #######int(sys.argv[1])
+    start_fans(lock, robots[0])
     for run_num in range(j, j + num_rollouts):
       print "******** trial # ", run_num
       run()
-      time.sleep(1)
+      time.sleep(3)
 
     print('Stopping robot and exiting...')
+    stop_fans(lock, robots[0])
     stop_and_exit_roach(xb, lock, robots, use_pid_mode)
 
   except:

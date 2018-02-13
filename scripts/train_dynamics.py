@@ -47,9 +47,10 @@ def main():
     ##################################
 
     #saving directories
-    run_num=77                                          #directory for saving everything
-    desired_shape_for_traj = "right"                     #straight, left, right, circle_left, zigzag, figure8
+    run_num=0                                          #directory for saving everything
+    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
     traj_save_path= desired_shape_for_traj + str(0)     #directory name inside run_num directory
+    task_type=['carpet']                                 # "all" if want to use all data
     
     #running
     use_pid_mode = True 
@@ -62,13 +63,15 @@ def main():
     # filename_trainingdata='/data_collection/carpet_2018_01_18_12_08_08'
     # training_rollouts=np.arange(9)+0
     # validation_rollouts=[9]
-
     training_ratio = 0.9
     data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
     path_lst = []
+
     for subdir, dirs, files in os.walk(data_path):
-        for file in files:
-            path_lst.append(os.path.join(subdir, file))
+        surface = subdir.split("/")[-1].split("_")[0]
+        if surface in task_type or task_type == "all":
+            for file in files:
+                path_lst.append(os.path.join(subdir, file))
     path_lst.sort()
     training_rollouts = int(len(path_lst)*training_ratio)
     if training_rollouts%2 != 0:
@@ -105,10 +108,10 @@ def main():
     ##################################
 
     #set min and max
-    left_min = 1000
-    right_min = 1000
-    left_max = 2000
-    right_max = 2000
+    left_min = 1500
+    right_min = 1500
+    left_max = 3000
+    right_max = 3000
 
     if(use_pid_mode):
       if(slow_pid_mode):
