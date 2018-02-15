@@ -11,7 +11,7 @@ from feedforward_network import feedforward_network
 class Dyn_Model:
 
     def __init__(self, inputSize, outputSize, sess, learning_rate, batchsize, which_agent, x_index, y_index, 
-                num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, print_minimal):
+                num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, print_minimal, use_multistep_loss=True):
 
         #init vars
         self.sess = sess
@@ -28,6 +28,7 @@ class Dyn_Model:
         self.std_y = std_y
         self.std_z = std_z
         self.print_minimal = print_minimal
+        self.use_multistep_loss = use_multistep_loss
 
         #placeholders
         self.x_ = tf.placeholder(tf_datatype, shape=[None, self.inputSize], name='x') #inputs
@@ -36,16 +37,19 @@ class Dyn_Model:
         #forward pass
         self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
                                                     num_fc_layers, depth_fc_layers, tf_datatype)
-        # self.nn_output2 = feedforward_network(self.curr_nn_output, self.inputSize, self.outputSize, 
-        #                                             num_fc_layers, depth_fc_layers, tf_datatype)
-        # self.nn_output3 = feedforward_network(self.nn_output2, self.inputSize, self.outputSize, 
-        #                                             num_fc_layers, depth_fc_layers, tf_datatype)
-        # self.nn_output4 = feedforward_network(self.nn_output3, self.inputSize, self.outputSize, 
-        #                                             num_fc_layers, depth_fc_layers, tf_datatype)
-        # # loss
-        # self.mse_ = tf.reduce_mean(tf.add_n([tf.square(self.z_ - self.curr_nn_output), tf.square(self.next_z_[:,0] - self.nn_output2),
-        #                                     tf.square(self.next_z_[:,1] - self.nn_output3), tf.square(self.next_z_[:,2] - self.nn_output4)]))
-        self.mse_ = tf.reduce_mean(tf.square(self.z_ - self.curr_nn_output))
+
+        if self.use_multistep_loss:
+            self.nn_output2 = feedforward_network(self.curr_nn_output, self.inputSize, self.outputSize, 
+                                                        num_fc_layers, depth_fc_layers, tf_datatype)
+            self.nn_output3 = feedforward_network(self.nn_output2, self.inputSize, self.outputSize, 
+                                                        num_fc_layers, depth_fc_layers, tf_datatype)
+            self.nn_output4 = feedforward_network(self.nn_output3, self.inputSize, self.outputSize, 
+                                                        num_fc_layers, depth_fc_layers, tf_datatype)
+            # loss
+            self.mse_ = tf.reduce_mean(tf.add_n([tf.square(self.z_ - self.curr_nn_output), tf.square(self.next_z_[:,0] - self.nn_output2),
+                                                tf.square(self.next_z_[:,1] - self.nn_output3), tf.square(self.next_z_[:,2] - self.nn_output4)]))
+        else:
+            self.mse_ = tf.reduce_mean(tf.square(self.z_ - self.curr_nn_output))
 
         # Compute gradients and update parameters
         self.opt = tf.train.AdamOptimizer(learning_rate)
@@ -108,7 +112,7 @@ class Dyn_Model:
                     data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
                     data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
                     dataZ_next = dataZ[data_next_indeces, :]
-                    
+
                     #one iteration of feedforward training
                     _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
                                                                 feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, 
