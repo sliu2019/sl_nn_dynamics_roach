@@ -11,7 +11,7 @@ from feedforward_network import feedforward_network
 class Dyn_Model:
 
     def __init__(self, inputSize, outputSize, sess, learning_rate, batchsize, which_agent, x_index, y_index, 
-                num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, print_minimal, use_multistep_loss=True):
+                num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, print_minimal, use_multistep_loss=False):
 
         #init vars
         self.sess = sess

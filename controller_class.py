@@ -95,9 +95,13 @@ class Controller(object):
       self.backward_discouragement= 10
       self.heading_penalty_factor= 15'''
 
-      self.horiz_penalty_factor= 40 ## care about staying close to the traj
-      self.backward_discouragement= 10 ## care about moving forward
-      self.heading_penalty_factor= 8 ## care about turning heading to be same direction as line youre trying to follow (but note that this doesnt bring you closer to the line)
+      ######## GOOD FOR ZIGZAG: 35, 5, 2
+      ######## GOOD FOR RIGHT: 40, 10, 5
+      ######## GOOD FOR LEFT: 30, 10, 10
+
+      self.horiz_penalty_factor= 35 ## care about staying close to the traj
+      self.backward_discouragement= 10  ## care about moving forward
+      self.heading_penalty_factor= 5 ## care about turning heading to be same direction as line youre trying to follow (but note that this doesnt bring you closer to the line)
 
       self.setup()
 

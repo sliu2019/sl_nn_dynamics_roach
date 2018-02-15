@@ -48,7 +48,7 @@ def main():
 
     #saving directories
     run_num=0                                          #directory for saving everything
-    desired_shape_for_traj = "right"                     #straight, left, right, circle_left, zigzag, figure8
+    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
     traj_save_path= desired_shape_for_traj + str(0)     #directory name inside run_num directory
     task_type=['carpet']                                 # "all" if want to use all data
     months = ['02']
