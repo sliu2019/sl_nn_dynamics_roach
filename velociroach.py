@@ -196,17 +196,17 @@ class Velociroach:
         #time.sleep(0.1)
     
     #TODO: This may be a vestigial function. Check versus firmware.
-    def setMotorMode(self, motorgains, retries = 8 ):
+    def setMotorMode(self, mode, retries = 8 ):
         tries = 1
-        self.motorGains = motorgains
-        self.motor_gains_set = False
+        #self.motorGains = motorgains
+        #self.motor_gains_set = False
 
-        while not(self.motor_gains_set) and (tries <= retries):
-            self.clAnnounce()
-            print "Setting motor mode...   ",tries,"/8"
-            self.tx( 0, command.SET_MOTOR_MODE, pack('10h',*gains))
-            tries = tries + 1
-            time.sleep(0.1)
+        #while not(self.motor_gains_set) and (tries <= retries):
+        #    self.clAnnounce()
+        #    print "Setting motor mode...   ",tries,"/8"
+        self.tx( 0, command.SET_MOTOR_MODE, pack('h',mode))
+        #    tries = tries + 1
+        time.sleep(0.1)
     
     def streamTelemetry(self, stream = 0):
       self.tx(0, command.STREAM_TELEMETRY, pack('b', stream))

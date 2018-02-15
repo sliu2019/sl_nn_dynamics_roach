@@ -91,9 +91,13 @@ class Controller(object):
       self.yaw_sin_index = 11
       
       #FUNCTIONAL on new legs for both straight and circle
-      self.horiz_penalty_factor= 40 
+      '''self.horiz_penalty_factor= 40 
       self.backward_discouragement= 10
-      self.heading_penalty_factor= 15
+      self.heading_penalty_factor= 15'''
+
+      self.horiz_penalty_factor= 40 ## care about staying close to the traj
+      self.backward_discouragement= 10 ## care about moving forward
+      self.heading_penalty_factor= 8 ## care about turning heading to be same direction as line youre trying to follow (but note that this doesnt bring you closer to the line)
 
       self.setup()
 
@@ -260,7 +264,18 @@ class Controller(object):
 
         if(step%self.dt_steps == 0):
           self.traj_taken.append(curr_state)
-          optimal_action, curr_line_segment, old_curr_forward, save_perp_dist, save_forward_dist, saved_old_forward_dist, save_moved_to_next, save_desired_heading, save_curr_heading = self.a.compute_optimal_action(np.copy(curr_state), self.desired_states, self.left_min, self.left_max, self.right_min, self.right_max, np.copy(optimal_action), step, self.dyn_model, self.N, self.horizon, self.dt_steps, self.x_index, self.y_index, self.yaw_cos_index, self.yaw_sin_index, self.mean_x, self.mean_y, self.mean_z, self.std_x, self.std_y, self.std_z, self.publish_markers_desired, self.publish_markers, self.curr_line_segment, self.horiz_penalty_factor, self.backward_discouragement, self.heading_penalty_factor, self.old_curr_forward)
+          optimal_action, curr_line_segment, old_curr_forward, \
+              save_perp_dist, save_forward_dist, saved_old_forward_dist, \
+              save_moved_to_next, save_desired_heading, save_curr_heading = self.a.compute_optimal_action(np.copy(curr_state), self.desired_states, \
+                                                                                                          self.left_min, self.left_max, self.right_min, self.right_max, \
+                                                                                                          np.copy(optimal_action), step, self.dyn_model, self.N, \
+                                                                                                          self.horizon, self.dt_steps, self.x_index, self.y_index, \
+                                                                                                          self.yaw_cos_index, self.yaw_sin_index, \
+                                                                                                          self.mean_x, self.mean_y, self.mean_z, \
+                                                                                                          self.std_x, self.std_y, self.std_z, self.publish_markers_desired, \
+                                                                                                          self.publish_markers, self.curr_line_segment, \
+                                                                                                          self.horiz_penalty_factor, self.backward_discouragement, \
+                                                                                                          self.heading_penalty_factor, self.old_curr_forward)
           self.curr_line_segment = np.copy(curr_line_segment)
           self.old_curr_forward = np.copy(old_curr_forward)
 

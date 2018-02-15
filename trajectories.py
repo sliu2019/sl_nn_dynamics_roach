@@ -28,15 +28,15 @@ def make_trajectory(shape, curr_state, x_index, y_index):
 
     if(shape=="right"):
         my_list.append(np.array([curr_x, curr_y]))
-        my_list.append(np.array([curr_x+0.5, curr_y]))
-        my_list.append(np.array([curr_x+0.8, curr_y-0.2]))
-        my_list.append(np.array([curr_x+1, curr_y-1]))
-        my_list.append(np.array([curr_x+1, curr_y-2]))
-        my_list.append(np.array([curr_x+1, curr_y-3]))
-        my_list.append(np.array([curr_x+1, curr_y-4]))
-        my_list.append(np.array([curr_x+1, curr_y-5]))
-        my_list.append(np.array([curr_x+1, curr_y-6]))
-        my_list.append(np.array([curr_x+1, curr_y-7]))
+        my_list.append(np.array([curr_x+1, curr_y]))
+        my_list.append(np.array([curr_x+1.8, curr_y-0.2]))
+        my_list.append(np.array([curr_x+2, curr_y-1]))
+        my_list.append(np.array([curr_x+2, curr_y-2]))
+        my_list.append(np.array([curr_x+2, curr_y-3]))
+        my_list.append(np.array([curr_x+2, curr_y-4]))
+        my_list.append(np.array([curr_x+2, curr_y-5]))
+        my_list.append(np.array([curr_x+2, curr_y-6]))
+        my_list.append(np.array([curr_x+2, curr_y-7]))
 
     if(shape=="circle_left"):
         my_list.append(np.array([curr_x, curr_y]))
@@ -78,4 +78,19 @@ def make_trajectory(shape, curr_state, x_index, y_index):
     if(shape=='figure8'):
         pass
 
-    return np.array(my_list)
+    my_list = np.array(my_list)
+    print "\n&&&&&&&&&&&&"
+    print my_list.shape
+    print "&&&&&&&&&&&&\n"
+    return my_list
+
+
+        # my_list.append(np.array([curr_x, curr_y]))
+        # my_list.append(np.array([curr_x+0.5, curr_y+0.5]))
+        # my_list.append(np.array([curr_x+1, curr_y+1]))
+        # my_list.append(np.array([curr_x+1.5, curr_y+0.5]))
+        # my_list.append(np.array([curr_x+2, curr_y]))
+        # my_list.append(np.array([curr_x+2.5, curr_y+0.5]))
+        # my_list.append(np.array([curr_x+3, curr_y+1]))
+        # my_list.append(np.array([curr_x+3.5, curr_y+0.5]))
+        # my_list.append(np.array([curr_x+4, curr_y]))

@@ -48,13 +48,14 @@ def main():
 
     #saving directories
     run_num=0                                          #directory for saving everything
-    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
+    desired_shape_for_traj = "right"                     #straight, left, right, circle_left, zigzag, figure8
     traj_save_path= desired_shape_for_traj + str(0)     #directory name inside run_num directory
     task_type=['carpet']                                 # "all" if want to use all data
-    
+    months = ['02']
+
     #running
     use_pid_mode = True 
-    slow_pid_mode = False
+    slow_pid_mode = True
     serial_port = '/dev/ttyUSB0'
     baud_rate = 57600
     DEFAULT_ADDRS = ['\x00\x01']
@@ -68,34 +69,37 @@ def main():
     path_lst = []
 
     for subdir, dirs, files in os.walk(data_path):
-        surface = subdir.split("/")[-1].split("_")[0]
-        if surface in task_type or task_type == "all":
-            for file in files:
-                path_lst.append(os.path.join(subdir, file))
+        lst = subdir.split("/")[-1].split("_")
+        if len(lst) >= 3:
+            surface = lst[0]
+            month = lst[2]
+            if ((surface in task_type or task_type == "all") and month in months):
+                for file in files:
+                    path_lst.append(os.path.join(subdir, file))
     path_lst.sort()
+    print "num of rollouts: ", len(path_lst)/2
     training_rollouts = int(len(path_lst)*training_ratio)
     if training_rollouts%2 != 0:
         training_rollouts -= 1
     validation_rollouts = len(path_lst) - training_rollouts
 
-
     #training
-    use_existing_data = True
+    use_existing_data = False ##True
     train_now = False
-    nEpoch_initial = 75
+    nEpoch_initial = 50
     nEpoch = 20
     state_representation = "all" #all, only_yaw, no_legs, no_legs_gyro, only_mocap
     num_fc_layers = 2
     depth_fc_layers = 500
-    batchsize = 10 ######1000
+    batchsize = 1000
     lr = 0.001
     
     #controller
-    num_steps_per_controller_run= 40 #70
+    num_steps_per_controller_run= 100
     N=1000
     horizon = 4
     frequency_value=10
-    playback_mode = False
+    playback_mode = False ##True
     
     #aggregation
     fraction_use_new = 0.5
@@ -117,17 +121,14 @@ def main():
       if(slow_pid_mode):
         left_min = 2*math.pow(2,16)*0.001
         right_min = 2*math.pow(2,16)*0.001
-        left_max = 6*math.pow(2,16)*0.001
-        right_max = 6*math.pow(2,16)*0.001
+        left_max = 9*math.pow(2,16)*0.001
+        right_max = 9*math.pow(2,16)*0.001
       else:
-        left_min = 6*math.pow(2,16)*0.001
-        right_min = 6*math.pow(2,16)*0.001
+        left_min = 4*math.pow(2,16)*0.001
+        right_min = 4*math.pow(2,16)*0.001
         left_max = 12*math.pow(2,16)*0.001
         right_max = 12*math.pow(2,16)*0.001
     
-    min_motor_gain=0 ##??
-    max_motor_gain=0 ##??
-
     ##################################
     ######### LOG DIRECTORY ##########
     ##################################
@@ -361,7 +362,10 @@ def main():
         print("dataX dim: ", dataX.shape)
 
         if(playback_mode):
-            controller = ControllerPlayback(dt_steps, state_representation, min_motor_gain, max_motor_gain, frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1])
+            controller = ControllerPlayback(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
+                                left_min, left_max, right_min, right_max, 
+                                use_pid_mode=use_pid_mode, frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS)
         else:
             controller = Controller(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
                                 left_min, left_max, right_min, right_max, 

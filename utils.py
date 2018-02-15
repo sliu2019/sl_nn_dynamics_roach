@@ -97,7 +97,8 @@ def stop_and_exit_roach(xb, lock, robots, use_pid_mode):
 	lock.acquire()
 	for robot in robots:
 		if(use_pid_mode):
-			robot.setVelGetTelem(0,0)
+			#robot.setVelGetTelem(0,0)
+			robot.PIDStopMotors()
 			robot.PIDStopMotors()
 			robot.running = False
 		else:
