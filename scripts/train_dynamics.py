@@ -48,15 +48,15 @@ def main():
 
     #saving directories
     run_num=0                                          #directory for saving everything
-    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
+    desired_shape_for_traj = "right"                     #straight, left, right, circle_left, zigzag, figure8
     traj_save_path= desired_shape_for_traj + str(0)     #directory name inside run_num directory
-    task_type=['carpet']                                 # "all" if want to use all data
+    task_type=['pebbles', 'gravel']                                 # "all" if want to use all data
     months = ['02']
 
     #running
     use_pid_mode = True 
     slow_pid_mode = True
-    serial_port = '/dev/ttyUSB0'
+    serial_port = '/dev/ttyUSB2'
     baud_rate = 57600
     DEFAULT_ADDRS = ['\x00\x01']
 
@@ -84,7 +84,7 @@ def main():
     validation_rollouts = len(path_lst) - training_rollouts
 
     #training
-    use_existing_data = False ##True
+    use_existing_data = True ##True
     train_now = False
     nEpoch_initial = 50
     nEpoch = 20
@@ -95,7 +95,7 @@ def main():
     lr = 0.001
     
     #controller
-    num_steps_per_controller_run= 100
+    num_steps_per_controller_run= 90
     N=1000
     horizon = 4
     frequency_value=10

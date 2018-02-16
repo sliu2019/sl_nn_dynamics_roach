@@ -4,6 +4,9 @@ import math
 import rospy
 import numpy as np
 import numpy.random as npr
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from geometry_msgs.msg import TwistStamped
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import PointStamped
@@ -34,7 +37,7 @@ from collections import OrderedDict
 
 # Roach Imports
 import command
-import time, sys, os, traceback
+import time, traceback
 import serial
 from velociroach import *
 from roach_dynamics_learning.msg import velroach_msg
@@ -88,7 +91,7 @@ class DiffDriveController(object):
       #setting up serial
       self.xb = None
       try:
-        self.xb = setupSerial('/dev/ttyUSB0',57600)
+        self.xb = setupSerial('/dev/ttyUSB2',57600)
       except:
         print('Failed to set up serial, exiting')
 
@@ -133,7 +136,7 @@ class DiffDriveController(object):
 
 
     def run(self,num_steps_for_rollout):
-      TELEMETRY = True
+      TELEMETRY = False
 
       #init values for the loop below
       self.traj_taken=[]
@@ -482,9 +485,9 @@ def moving_distance(unit1, unit2):
 def main():
   
   #parameters to tune
-  min_motor_gain= 3
-  nominal = 8
-  max_motor_gain= 10
+  min_motor_gain= 2
+  nominal = 6
+  max_motor_gain= 9
 
   weight_horiz= 2
   weight_heading= 5
@@ -493,7 +496,7 @@ def main():
   dc = DiffDriveController(dt_steps=1, min_motor_gain=min_motor_gain, max_motor_gain=max_motor_gain, nominal=nominal, weight_horiz=weight_horiz, weight_heading=weight_heading, traj_save_path=traj_save_path, frequency_value=10, actionSize=2)
 
   time.sleep(.5)
-  dc.run(105)
+  dc.run(150)
 
 if __name__ == '__main__':
     main()

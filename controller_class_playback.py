@@ -186,6 +186,9 @@ class ControllerPlayback(object):
       robot_file = "../data_collection/carpet_2018_02_13_11_44_24/4_robot_info.obj"
       mocap_file = "../data_collection/carpet_2018_02_13_11_44_24/4_mocap_info.obj"
 
+      #gravel
+      robot_file = "../data_collection/gravel_2018_02_02_18_07_34/0_robot_info.obj"
+
       all_robot_info = pickle.load(open(robot_file,'r'))
       all_mocap_info = pickle.load(open(mocap_file,'r'))
 

@@ -220,6 +220,12 @@ class Actions(object):
         curr_forward[dist<=min_perp_dist] = which_line_section[dist<=min_perp_dist]#### np.clip(which_line_section,0,1)[dist<=min_perp_dist]
         min_perp_dist = np.min([min_perp_dist, dist], axis=0)
 
+        '''print "\n$$$$$$$$$$$$$$$$$$$"
+        print "min_perp_dist"
+        print min_perp_dist[:50]
+        print min_perp_dist.shape
+        print "$$$$$$$$$$$$$$$$$$$\n"'''
+
         ################## scoring
         #penalize horiz dist
         scores += min_perp_dist*horiz_penalty_factor
@@ -231,6 +237,15 @@ class Actions(object):
         desired_yaw = np.arctan2(curr_end[:,1]-curr_start[:,1], curr_end[:,0]-curr_start[:,0])
         curr_yaw = np.arctan2(pt[:,yaw_sin_index],pt[:,yaw_cos_index])
         diff = np.abs(moving_distance(desired_yaw, curr_yaw))
+        '''print "\n$$$$$$$$$$$$$$$$$$$"
+        print "diff"
+        print diff[:50]
+        print diff.shape
+        print "$$$$$$$$$$$$$$$$$$$\n"'''
+        # diff = np.multiply(diff, (1-np.exp(-diff*2)))
+        '''for i in range(diff.shape[0]):
+          if min_perp_dist[i] < 0.1: diff[i] = 0
+          elif min_perp_dist[i] > 0.2: diff[i] = diff[i] * 1.25'''
         scores += diff*heading_penalty_factor
 
         #update

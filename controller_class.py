@@ -100,8 +100,8 @@ class Controller(object):
       ######## GOOD FOR LEFT: 30, 10, 10
 
       self.horiz_penalty_factor= 35 ## care about staying close to the traj
-      self.backward_discouragement= 10  ## care about moving forward
-      self.heading_penalty_factor= 5 ## care about turning heading to be same direction as line youre trying to follow (but note that this doesnt bring you closer to the line)
+      self.backward_discouragement= 5  ## care about moving forward
+      self.heading_penalty_factor= 2 ## care about turning heading to be same direction as line youre trying to follow (but note that this doesnt bring you closer to the line)
 
       self.setup()
 
