@@ -42,16 +42,16 @@ from utils import *
 ####### VARS TO SPECIFY #######
 ###############################
 
-task_type='carpet'
+task_type='junk'
 
-num_rollouts = 10
-rollout_length= 50
+num_rollouts = 1 #######10
+rollout_length= 200 ######50
 
 use_pid_mode = True
 slow_pid_mode = True
-use_joystick= False
+use_joystick= True ##False
 print_frequency = 1
-serial_port = '/dev/ttyUSB0'
+serial_port = '/dev/ttyUSB2'
 baud_rate = 57600
 DEFAULT_ADDRS = ['\x00\x01']
 frequency_value = 10
@@ -73,15 +73,10 @@ inner_r = 0.5 #0.3
 # thrust val
 MIN_LEFT  = 1200
 MIN_RIGHT = 1200
-MAX_LEFT  = 2100
-MAX_RIGHT = 2100
+MAX_LEFT  = 2500
+MAX_RIGHT = 2500
 
 # pid val
-# MIN_LEFT  = 2000
-# MIN_RIGHT = 2000
-# MAX_LEFT  = 2600
-# MAX_RIGHT = 2600
-
 if(use_pid_mode):
   if(slow_pid_mode):
     MIN_LEFT = 2*math.pow(2,16)*0.001
@@ -111,11 +106,13 @@ def check_is_stuck(queue, llp, rlp):
   ollp = old[0]
   orlp = old[1]
 
-  if math.fabs(ollp - llp) * legScale < 2 * np.pi:
+  '''if math.fabs(ollp - llp) * legScale < 2 * np.pi:
     return True
   if math.fabs(orlp - rlp) * legScale < 2 * np.pi:
     return True
   queue.put([llp, rlp])
+  return False'''
+
   return False
 
 
@@ -132,7 +129,7 @@ def callback_joystick(command):
 
     lock.acquire()
     command_from_joystick = convert_command(command)
-    print command_from_joystick
+    ##print command_from_joystick
     lock.release()
   else:
     junk=1
@@ -397,7 +394,7 @@ if __name__ == '__main__':
     for run_num in range(j, j + num_rollouts):
       print "******** trial # ", run_num
       run()
-      time.sleep(3)
+      time.sleep(1)
 
     print('Stopping robot and exiting...')
     stop_fans(lock, robots[0])

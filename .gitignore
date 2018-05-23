@@ -1,3 +1,11 @@
 run_*
+camera_debugging
+data_collection
+images
+videos
+bvlc_alexnet.npy
+poodle.png
+plotting
 data_*
+DATA_*
 *.pyc

@@ -69,3 +69,47 @@ catkin_make
   v_yw=0
   old_angles = np.copy(angles)
   old_quat= a.pose.orientation ###is this a shallow copy?
+
+
+
+################### 
+
+comments from main file, idk if useful
+
+    #31, no added layers, onehot without cam
+    #32, added layers 64, onehot without cam (50eps)
+    #34, added layers 64, onehot without cam (30eps) *****
+    #33, no added layers, fixed onehots rand(-1,1) + append 1
+    #35, added layers 64, fixed onehots rand(-1,1) + append 1(30eps) *****
+    #36, added layers 64, meanvec + append 1(30eps) **kinda
+    #37, added layers 64, meanvec + append 1(50eps)
+
+    #38, added layers 32, meanvec + append 1(40eps) **kinda ish
+        #added layers 32, meanvec + append 1(70eps)
+    #39, added layers 32, meanvec + append 1(50eps) -- net200 *****
+    #40, added layers 32, sampleIms + append 1(50eps) -- net200 ************ THIS ONE!*****
+
+
+
+
+
+
+    #length of controller run
+    if(desired_shape_for_traj=='straight'):
+        num_steps_per_controller_run=80
+        if (task_type==['gravel']):
+            num_steps_per_controller_run=85
+    elif(desired_shape_for_traj=='left'):
+        num_steps_per_controller_run= 130 #########120
+        if(task_type==['turf']):
+            num_steps_per_controller_run=110
+    elif(desired_shape_for_traj=='right'):
+        num_steps_per_controller_run= 150
+        if ('gravel' in task_type):
+            num_steps_per_controller_run=130
+    elif(desired_shape_for_traj=='zigzag'):
+        num_steps_per_controller_run=160
+        if(task_type==['turf']):
+            num_steps_per_controller_run=210
+    else:
+        num_steps_per_controller_run=0

@@ -47,10 +47,12 @@ class Controller(object):
 
     def __init__(self, traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
                 left_min, left_max, right_min, right_max, 
-                use_pid_mode,frequency_value=20, stateSize=24, actionSize=2,
-                N=1000, horizon=4, serial_port='/dev/ttyUSB0', baud_rate = 57600, DEFAULT_ADDRS = ['\x00\x01']):
+                use_pid_mode,
+                frequency_value=20, stateSize=24, actionSize=2,
+                N=1000, horizon=4, serial_port='/dev/ttyUSB0', baud_rate = 57600, DEFAULT_ADDRS = ['\x00\x01'],visualize_rviz=False):
 
       #set vars
+      self.visualize_rviz=visualize_rviz
       self.serial_port = serial_port
       self.baud_rate = baud_rate
       self.DEFAULT_ADDRS = DEFAULT_ADDRS
@@ -89,19 +91,43 @@ class Controller(object):
       self.y_index=1
       self.yaw_cos_index = 10
       self.yaw_sin_index = 11
-      
-      #FUNCTIONAL on new legs for both straight and circle
-      '''self.horiz_penalty_factor= 40 
-      self.backward_discouragement= 10
-      self.heading_penalty_factor= 15'''
 
-      ######## GOOD FOR ZIGZAG: 35, 5, 2
-      ######## GOOD FOR RIGHT: 40, 10, 5
-      ######## GOOD FOR LEFT: 30, 10, 10
+      '''
+      CARPET:
+        zigzag: 30, 10, 5 (150, just little to the right of green tape, center height near t)
+        right: 40, 10, 5 (120, start just to the left of green horiz tape, near black t)
+        left: 30, 10, 5 (150, just little to the right of green tape, up close-ish to green corner)
+        straight: 30, 10, 5 (70, start middle of green tape, center height near t)
 
-      self.horiz_penalty_factor= 35 ## care about staying close to the traj
-      self.backward_discouragement= 5  ## care about moving forward
-      self.heading_penalty_factor= 2 ## care about turning heading to be same direction as line youre trying to follow (but note that this doesnt bring you closer to the line)
+      GRAVEL:
+        zigzag: 
+        right: 
+        left: 
+        straight:
+
+      pics: straight, zigzag, left, right
+      STYROFOAM:
+        zigzag: 30, 10, 5 (looks good, 160, start just to the right of green horiz tape)
+        right: 40, 10, 5 (looks good, 120, start just to the left of green horiz tape, very close to bottom edge)
+        left: 30, 10, 5 (looks good, 150, start foot to the right of green horiz tape, a foot away from the 2nd foam)
+        straight: 30, 10, 5 (looks good, 70, start in middle of green horiz tape)  '''
+
+      if(self.desired_shape_for_traj=='right'):
+        self.horiz_penalty_factor= 75 ## care about staying close to the traj
+        self.backward_discouragement= 5  ## care about moving forward
+        self.heading_penalty_factor= 5 #2 ## care about turning heading to be same direction as line youre trying to follow (but note that this doesnt bring you closer to the line)
+      elif(self.desired_shape_for_traj=='zigzag'):
+        self.horiz_penalty_factor= 60 #80 ## care about staying close to the traj
+        self.backward_discouragement= 10  ## care about moving forward
+        self.heading_penalty_factor= 5
+      elif(self.desired_shape_for_traj=='left'):
+        self.horiz_penalty_factor= 30 ## care about staying close to the traj
+        self.backward_discouragement= 10  ## care about moving forward
+        self.heading_penalty_factor= 5
+      else:
+        self.horiz_penalty_factor= 30 # 70 #care about staying close to the traj
+        self.backward_discouragement= 10  ## care about moving forward
+        self.heading_penalty_factor= 5 ## care about turning heading to be same direction as line youre trying to follow (but note that this doesnt bring you closer to the line)
 
       self.setup()
 
@@ -109,6 +135,7 @@ class Controller(object):
 
       #init node
       rospy.init_node('controller_node', anonymous=True)
+      #print("made controller node")
       self.rate = rospy.Rate(self.frequency_value)
 
       #setup serial, roach bridge, and imu queues
@@ -129,7 +156,7 @@ class Controller(object):
       self.pub_curr_state= rospy.Publisher('curr_state', Float32MultiArray, queue_size=5)
 
       #action selector (MPC)
-      self.a = Actions()
+      self.a = Actions(visualize_rviz=self.visualize_rviz)
 
       #tensorflow options
       gpu_device = 0
@@ -211,7 +238,7 @@ class Controller(object):
           robotinfo.bemfR = d[15]
           robotinfo.vBat = d[16]
           self.publish_robotinfo.publish(robotinfo)
-          print "got state"
+          #print "got state"
 
         #collect info to save for later
         list_robot_info.append(robotinfo)
@@ -222,6 +249,11 @@ class Controller(object):
           old_pos= self.mocap_info.pose.position #curr pos
           old_al= robotinfo.posL/math.pow(2,16)*2*math.pi #curr al
           old_ar= robotinfo.posR/math.pow(2,16)*2*math.pi #curr ar
+
+        #check dt of controller
+        if(step>0):
+          step_dt = (robotinfo.stamp.secs-old_time.secs) + (robotinfo.stamp.nsecs-old_time.nsecs)*0.000000001
+          print("DT: ", step_dt)
 
         #create state from the info
         curr_state, old_time, old_pos, old_al, old_ar = singlestep_to_state(robotinfo, self.mocap_info, old_time, old_pos, old_al, old_ar, self.state_representation)
@@ -294,6 +326,6 @@ class Controller(object):
           self.save_desired_heading.append(save_desired_heading)
           self.save_curr_heading.append(save_curr_heading)
 
-        print("computed action")
+        #print("computed action")
         self.rate.sleep()
         step+=1

@@ -49,10 +49,15 @@ class DiffDriveController(object):
 
     def __init__(self, dt_steps, min_motor_gain, max_motor_gain, nominal, weight_horiz, weight_heading, traj_save_path, frequency_value=10, actionSize=2):
 
-      self.desired_shape_for_traj = "left" #straight, left, right, circle_left, zigzag, figure8
-
-      self.save_dir = "run_99"
+      self.do_telem=False
       self.traj_save_path = traj_save_path
+      self.desired_shape_for_traj = traj_save_path[:-1] #straight, left, right, circle_left, zigzag, figure8
+
+      self.save_dir = "../run_907"
+      if not os.path.exists(self.save_dir):
+        os.makedirs(self.save_dir)
+      if not os.path.exists(self.save_dir+'/'+traj_save_path):
+        os.makedirs(self.save_dir+'/'+traj_save_path)
 
       self.dt_steps = dt_steps
       self.x_index=0
@@ -110,18 +115,20 @@ class DiffDriveController(object):
           #self.STOP_ROBOT(robot)
           robot.setMotorGains([1800,200,100,0,0, 1800,200,100,0,0])
           robot.zeroPosition()
-          #new telem stuff
-          robot.setupTelemetryDataNum(10000)
-          time.sleep(1)
-          robot.zeroPosition()
+          
 
-          time.sleep(1)
-          robot.eraseFlashMem()
-          time.sleep(1)
-          robot.startTelemetrySave()
-          #time.sleep(2)
+          if(self.do_telem):
+            #new telem stuff
+            robot.setupTelemetryDataNum(10000)
+            time.sleep(1)
+            robot.zeroPosition()
+
+            time.sleep(1)
+            robot.eraseFlashMem()
+            time.sleep(1)
+            robot.startTelemetrySave()
+            #time.sleep(2)
           self.START_ROBOT(robot)
-
 
         #setup the info receiving... although not using right now
         shared.imu_queues = OrderedDict()
@@ -136,7 +143,6 @@ class DiffDriveController(object):
 
 
     def run(self,num_steps_for_rollout):
-      TELEMETRY = False
 
       #init values for the loop below
       self.traj_taken=[]
@@ -211,7 +217,7 @@ class DiffDriveController(object):
 
         curr_state=[x,y,z,r,p,yw,vx,vy,vz] #angles in radians
 
-        print("created state")
+        #print("created state")
 
         #########################
         ## CHECK STOPPING COND ##
@@ -219,26 +225,30 @@ class DiffDriveController(object):
 
         if(num_iters>=num_steps_for_rollout):
 
-
           print("DONE TAKING ", num_iters, " STEPS.")
 
-          if TELEMETRY:
-            for robot in self.robots:
-              robot.PIDStopMotors()
-              time.sleep(.5)
+          for robot in self.robots:
+            robot.PIDStopMotors()
+            time.sleep(.5)
+            robot.setThrustGetTelem(0,0)
 
+            robot.running = False
+            time.sleep(.5)
+
+            if(self.do_telem):
               robot.downloadTelemetry()
+
           #save
           take_steps=False
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_actions.npy', self.actions_taken)
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_desired.npy', self.desired_states)
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_executed.npy', self.traj_taken)
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_perp.npy', self.save_perp_dist)
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_forward.npy', self.save_forward_dist)
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_oldforward.npy', self.saved_old_forward_dist)
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_movedtonext.npy', self.save_moved_to_next)
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_desheading.npy', self.save_desired_heading)
-          np.save(self.save_dir +'/'+ self.traj_save_path +'_diffdrive_currheading.npy', self.save_curr_heading)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_actions.npy', self.actions_taken)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_desired.npy', self.desired_states)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_executed.npy', self.traj_taken)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_perp.npy', self.save_perp_dist)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_forward.npy', self.save_forward_dist)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_oldforward.npy', self.saved_old_forward_dist)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_movedtonext.npy', self.save_moved_to_next)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_desheading.npy', self.save_desired_heading)
+          np.save(self.save_dir +'/'+ self.traj_save_path +'/diffdrive_currheading.npy', self.save_curr_heading)
 
           time.sleep(1)
 
@@ -273,7 +283,7 @@ class DiffDriveController(object):
 
           old_curr_forward = np.copy(save_forward_dist)
 
-        print("computed action")
+        #print("computed action")
 
         ########################
         ## WAIT FOR SOME TIME ##
@@ -483,20 +493,39 @@ def moving_distance(unit1, unit2):
   return result*sign
 
 def main():
+
+  is_sty=True
   
   #parameters to tune
   min_motor_gain= 2
-  nominal = 6
   max_motor_gain= 9
+  nominal = 7
 
-  weight_horiz= 2
-  weight_heading= 5
+  weight_horiz= 3 #6
+  weight_heading= 5 #10
 
   traj_save_path = str(sys.argv[1]) #ex. straight0
   dc = DiffDriveController(dt_steps=1, min_motor_gain=min_motor_gain, max_motor_gain=max_motor_gain, nominal=nominal, weight_horiz=weight_horiz, weight_heading=weight_heading, traj_save_path=traj_save_path, frequency_value=10, actionSize=2)
 
+  if(traj_save_path[:-1]=='straight'):
+    numSteps=70
+  elif(traj_save_path[:-1]=='left'):
+    numSteps=120
+    if(is_sty):
+      numSteps=150
+  elif(traj_save_path[:-1]=='right'):
+    numSteps=150
+  elif(traj_save_path[:-1]=='zigzag'):
+    numSteps=200
+  else:
+    numSteps=0
+
+
+  # numSteps=40
+
   time.sleep(.5)
-  dc.run(150)
+  dc.run(numSteps)
+
 
 if __name__ == '__main__':
     main()

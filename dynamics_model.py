@@ -5,13 +5,15 @@ import tensorflow as tf
 import time
 import math
 
-from feedforward_network import feedforward_network
 
 
 class Dyn_Model:
 
     def __init__(self, inputSize, outputSize, sess, learning_rate, batchsize, which_agent, x_index, y_index, 
-                num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, print_minimal, use_multistep_loss=False):
+                num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, np_datatype,
+                print_minimal, feedforward_network, use_one_hot, curr_env_onehot, N, use_multistep_loss=False, one_hot_dims=4):
+
+        
 
         #init vars
         self.sess = sess
@@ -29,14 +31,24 @@ class Dyn_Model:
         self.std_z = std_z
         self.print_minimal = print_minimal
         self.use_multistep_loss = use_multistep_loss
+        self.np_datatype = np_datatype
+        self.use_one_hot = use_one_hot
+        self.one_hot_dims=one_hot_dims
+
+        #set curr_env_onehot
+        if(self.use_one_hot):
+            self.curr_env_onehot = np.tile(curr_env_onehot, (N,1))
+        else:
+            self.curr_env_onehot= np.ones((1,self.one_hot_dims))
 
         #placeholders
         self.x_ = tf.placeholder(tf_datatype, shape=[None, self.inputSize], name='x') #inputs
         self.z_ = tf.placeholder(tf_datatype, shape=[None, self.outputSize], name='z') #labels
+        self.tiled_onehots = tf.placeholder(tf_datatype, shape=[None, self.one_hot_dims]) #tiled one hot vectors
         self.next_z_ = tf.placeholder(tf_datatype, shape=[None, 3, self.outputSize], name='next_z')
         #forward pass
         self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
-                                                    num_fc_layers, depth_fc_layers, tf_datatype)
+                                                    num_fc_layers, depth_fc_layers, tf_datatype, self.tiled_onehots)
 
         if self.use_multistep_loss:
             self.nn_output2 = feedforward_network(self.curr_nn_output, self.inputSize, self.outputSize, 
@@ -59,7 +71,9 @@ class Dyn_Model:
                     if g is not None]
         self.train_step = self.opt.apply_gradients(self.gv)
 
-    def train(self, dataX, dataZ, dataX_new, dataZ_new, nEpoch, save_dir, fraction_use_new):
+    def train(self, dataX, dataZ, dataOneHots, dataX_new, dataZ_new, nEpoch, save_dir, fraction_use_new):
+
+        '''TO DO: new data doesnt have corresponding onehots right now'''
 
         #init vars
         start = time.time()
@@ -108,6 +122,7 @@ class Dyn_Model:
                     #combine the old and new data
                     dataX_batch = np.concatenate((dataX_old_batch, dataX_new_batch))
                     dataZ_batch = np.concatenate((dataZ_old_batch, dataZ_new_batch))
+                    dataOneHots_batch = dataOneHots[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
 
                     data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
                     data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
@@ -115,13 +130,13 @@ class Dyn_Model:
 
                     #one iteration of feedforward training
                     _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
-                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, 
-                                                                self.next_z_: dataZ_next})
+                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch,
+                                                                self.next_z_: dataZ_next, self.tiled_onehots: dataOneHots_batch})
                     training_loss_list.append(loss)
                     avg_loss+= loss
                     num_batches+=1
 
-            #train completely from new set
+            '''#train completely from new set ######### TO DO:
             else: 
                 for batch in range(int(math.floor(num_new_pts / batchsize_new_pts))):
 
@@ -134,7 +149,8 @@ class Dyn_Model:
 
                     #one iteration of feedforward training
                     _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
-                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next})
+                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, 
+                                                                self.next_z_: dataZ_next, self.tiled_onehots: tiled_onehots})
 
                     training_loss_list.append(loss)
                     avg_loss+= loss
@@ -143,7 +159,7 @@ class Dyn_Model:
                 #shuffle new dataset after an epoch (if training only on it)
                 p = npr.permutation(dataX_new.shape[0])
                 dataX_new = dataX_new[p]
-                dataZ_new = dataZ_new[p]
+                dataZ_new = dataZ_new[p]'''
 
             #save losses after an epoch
             np.save(save_dir + '/training_losses.npy', training_loss_list)
@@ -163,11 +179,14 @@ class Dyn_Model:
             # Batch the training data
             dataX_batch = dataX[batch*self.batchsize:(batch+1)*self.batchsize, :]
             dataZ_batch = dataZ[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
+
             data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
             data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
             dataZ_next = dataZ[data_next_indeces, :]
             #one iteration of feedforward training
-            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next})
+            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
+                                                                                self.tiled_onehots: dataOneHots_batch})
             avg_old_loss+= loss
             iters_in_batch+=1
         old_loss =  avg_old_loss/iters_in_batch
@@ -179,11 +198,14 @@ class Dyn_Model:
             # Batch the training data
             dataX_batch = dataX_new[batch*self.batchsize:(batch+1)*self.batchsize, :]
             dataZ_batch = dataZ_new[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
+
             data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
             data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
             dataZ_next = dataZ[data_next_indeces, :]
             #one iteration of feedforward training
-            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next})
+            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
+                                                                                self.tiled_onehots: dataOneHots_batch})
             avg_new_loss+= loss
             iters_in_batch+=1
         if(iters_in_batch==0):
@@ -194,7 +216,8 @@ class Dyn_Model:
         #done
         return (avg_loss/num_batches), old_loss, new_loss
 
-    def run_validation(self, inputs, outputs):
+    ##### TO DO: implement onehot stuff here
+    '''def run_validation(self, inputs, outputs):
 
         #init vars
         nData = inputs.shape[0]
@@ -207,7 +230,7 @@ class Dyn_Model:
             dataZ_batch = outputs[batch*self.batchsize:(batch+1)*self.batchsize, :]
 
             #one iteration of feedforward training
-            z_predictions, loss = self.sess.run([self.curr_nn_output, self.mse_], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch})
+            z_predictions, loss = self.sess.run([self.curr_nn_output, self.mse_], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.tiled_onehots: tiled_onehots})
 
             avg_loss+= loss
             iters_in_batch+=1
@@ -216,10 +239,10 @@ class Dyn_Model:
         print ("Validation set size: ", nData)
         print ("Validation set's total loss: ", avg_loss/iters_in_batch)
 
-        return (avg_loss/iters_in_batch)
+        return (avg_loss/iters_in_batch)'''
 
     #multistep prediction using the learned dynamics model at each step
-    def do_forward_sim(self, forwardsim_x_true, forwardsim_y, many_in_parallel, env_inp, which_agent):
+    def do_forward_sim(self, forwardsim_x_true, forwardsim_y, forwardsim_onehot, many_in_parallel, env_inp, which_agent):
 
         #init vars
         state_list = []
@@ -253,7 +276,7 @@ class Dyn_Model:
                 inputs_list= np.concatenate((states_preprocessed, actions_preprocessed), axis=1)
 
                 #run the N sims all at once
-                model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list}) 
+                model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_onehots: self.curr_env_onehot}) 
                 state_differences = np.multiply(model_output[0],array_stdz)+array_meanz
 
                 #update the state info
@@ -262,12 +285,19 @@ class Dyn_Model:
             #return a list of length = horizon+1... each one has N entries, where each entry is (13,)
             state_list.append(np.copy(curr_states))
         else:
+
             curr_state = np.copy(forwardsim_x_true[0]) #curr state is of dim NN input
+            curr_index = 0
 
             for curr_control in forwardsim_y:
 
                 state_list.append(np.copy(curr_state))
                 curr_control = np.expand_dims(curr_control, axis=0)
+
+                if(self.use_one_hot):
+                    curr_onehot = np.expand_dims(forwardsim_onehot[curr_index], axis=0) 
+                else:
+                    curr_onehot= np.ones((1,self.one_hot_dims))
 
                 #subtract mean and divide by standard deviation
                 curr_state_preprocessed = curr_state - self.mean_x
@@ -277,7 +307,7 @@ class Dyn_Model:
                 inputs_preprocessed = np.expand_dims(np.append(curr_state_preprocessed, curr_control_preprocessed), axis=0)
 
                 #run through NN to get prediction
-                model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed}) 
+                model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_onehots: curr_onehot}) 
 
                 #multiply by std and add mean back in
                 state_differences= (model_output[0][0]*self.std_z)+self.mean_z
@@ -287,6 +317,7 @@ class Dyn_Model:
 
                 #copy the state info
                 curr_state= np.copy(next_state)
+                curr_index+=1
 
             state_list.append(np.copy(curr_state))
               

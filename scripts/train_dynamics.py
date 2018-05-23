@@ -27,18 +27,14 @@ from utils import *
 from dynamics_model import Dyn_Model
 from controller_class import Controller
 from controller_class_playback import ControllerPlayback
+###################from myalexnet_forward import returnPictureEncoding
 
-'''
-TO DO:
 
--multistep loss
--multiple inputs
+#datatypes
+tf_datatype= tf.float32
+np_datatype= np.float32
 
--leave out certain elements of state, and see if training is better
--smooth vals (x/y/z/al/ar) before differentiating, and see if training is better 
-
-'''
-
+mappings = np.load("images.npy")
 
 def main():
 
@@ -46,28 +42,96 @@ def main():
     ######### SPECIFY VARS ###########
     ##################################
 
-    #saving directories
-    run_num=0                                          #directory for saving everything
+    #saving filenames
+    run_num= 52                                         #directory for saving everything
     desired_shape_for_traj = "right"                     #straight, left, right, circle_left, zigzag, figure8
-    traj_save_path= desired_shape_for_traj + str(0)     #directory name inside run_num directory
-    task_type=['pebbles', 'gravel']                                 # "all" if want to use all data
-    months = ['02']
+    save_run_num = 0
+    traj_save_path= desired_shape_for_traj + str(save_run_num)     #directory name inside run_num directory
 
-    #running
-    use_pid_mode = True 
+    
+    #which saved model to potentially load from
+    model_name = 'turf'     #onehot_smaller, combined, camera
+
+    #which setting to run in
+    use_one_hot= False #True
+    use_camera = False #True
+    curr_env_onehot = create_onehot('turf', use_camera, mappings)
+
+    #PID (velocity) vs PWM (thrust)
+    use_pid_mode = True      
     slow_pid_mode = True
-    serial_port = '/dev/ttyUSB2'
+
+    #xbee connection port
+    serial_port = '/dev/ttyUSB0'
+
+    #what training data to read in
+    task_type=['turf']            #task_type=['carpet','styrofoam', 'gravel', 'turf']      #'carpet','styrofoam', 'gravel', 'turf', 'all'
+    months = ['02']
+    training_ratio = 0.9
+    data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
+
+    #dynamics model training
+    use_existing_data = True
+    train_now = False
+    nEpoch_initial = 50
+    nEpoch = 20
+    state_representation = "all"
+    num_fc_layers = 2
+    depth_fc_layers = 500
+    batchsize = 1000
+    lr = 0.001
+    
+    #controller
+    visualize_rviz=True     #turning this off could make things go faster
+    if(use_one_hot):
+        N=400
+    else:
+        N=500
+    horizon = 5 #4
+    frequency_value=10
+    playback_mode = True
+
+    #length of controller run
+    #num_steps_per_controller_run=50
+    if(desired_shape_for_traj=='straight'):
+        num_steps_per_controller_run=80
+        if (task_type==['gravel']):
+            num_steps_per_controller_run=85
+    elif(desired_shape_for_traj=='left'):
+        num_steps_per_controller_run= 130
+        if(task_type==['turf']):
+            num_steps_per_controller_run=110
+    elif(desired_shape_for_traj=='right'):
+        num_steps_per_controller_run= 150
+        if ('gravel' in task_type):
+            num_steps_per_controller_run=130
+    elif(desired_shape_for_traj=='zigzag'):
+        num_steps_per_controller_run=160
+        if(task_type==['turf']):
+            num_steps_per_controller_run=210
+    else:
+        num_steps_per_controller_run=0
+
+
+    ##############################################
+    ##### DONT NEED TO MESS WITH THIS PART #######
+    ##############################################
+
+    #aggregation
+    fraction_use_new = 0.5
+    num_aggregation_iters = 1
+    num_trajectories_for_aggregation= 1
+    rollouts_forTraining = num_trajectories_for_aggregation
+
     baud_rate = 57600
     DEFAULT_ADDRS = ['\x00\x01']
 
-    #training data
-    # filename_trainingdata='/data_collection/carpet_2018_01_18_12_08_08'
-    # training_rollouts=np.arange(9)+0
-    # validation_rollouts=[9]
-    training_ratio = 0.9
-    data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
-    path_lst = []
+    one_hot_dims=4
+    if(use_camera):
+        one_hot_dims=6
 
+    #read in the training data
+    path_lst = []
     for subdir, dirs, files in os.walk(data_path):
         lst = subdir.split("/")[-1].split("_")
         if len(lst) >= 3:
@@ -83,39 +147,15 @@ def main():
         training_rollouts -= 1
     validation_rollouts = len(path_lst) - training_rollouts
 
-    #training
-    use_existing_data = True ##True
-    train_now = False
-    nEpoch_initial = 50
-    nEpoch = 20
-    state_representation = "all" #all, only_yaw, no_legs, no_legs_gyro, only_mocap
-    num_fc_layers = 2
-    depth_fc_layers = 500
-    batchsize = 1000
-    lr = 0.001
-    
-    #controller
-    num_steps_per_controller_run= 90
-    N=1000
-    horizon = 4
-    frequency_value=10
-    playback_mode = False ##True
-    
-    #aggregation
-    fraction_use_new = 0.5
-    num_aggregation_iters = 1
-    num_trajectories_for_aggregation= 1
-    rollouts_forTraining = num_trajectories_for_aggregation
-
     ##################################
     ######### MOTOR LIMITS ###########
     ##################################
 
     #set min and max
-    left_min = 1500
-    right_min = 1500
-    left_max = 3000
-    right_max = 3000
+    left_min = 1200
+    right_min = 1200
+    left_max = 2000
+    right_max = 2000
 
     if(use_pid_mode):
       if(slow_pid_mode):
@@ -123,7 +163,7 @@ def main():
         right_min = 2*math.pow(2,16)*0.001
         left_max = 9*math.pow(2,16)*0.001
         right_max = 9*math.pow(2,16)*0.001
-      else:
+      else: #this hasnt been tested yet
         left_min = 4*math.pow(2,16)*0.001
         right_min = 4*math.pow(2,16)*0.001
         left_max = 12*math.pow(2,16)*0.001
@@ -149,7 +189,13 @@ def main():
     if not os.path.exists(save_dir+'/'+traj_save_path):
         os.makedirs(save_dir+'/'+traj_save_path)
 
-    ##return
+
+    #return
+
+    ###############restore_dynamics_model_filepath = save_dir+ '/models/model_aggIter0.ckpt'
+    restore_dynamics_model_filepath = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/saved_models/'+str(model_name)+'/model_aggIter0.ckpt'
+    if(train_now==False):
+        print("restoring dynamics model from: ", restore_dynamics_model_filepath) 
 
     ##############################
     ### init vars 
@@ -160,7 +206,6 @@ def main():
     noise_True = True
     noise_False = False
     dt_steps= 1
-    tf_datatype= tf.float32
     x_index=0
     y_index=1
     z_index=2
@@ -212,13 +257,28 @@ def main():
             dataY = np.load(save_dir+ '/data/dataY.npy')
             dataZ = np.load(save_dir+ '/data/dataZ.npy')
 
+            if(use_one_hot):
+                dataOneHots = np.load(save_dir+ '/data/dataOneHots.npy')
+            else:
+                dataOneHots=0
+
             #validation data
             states_val = np.load(save_dir+ '/data/states_val.npy')
             controls_val = np.load(save_dir+ '/data/controls_val.npy')
 
+            if(use_one_hot):
+                onehots_val = np.load(save_dir+ '/data/onehots_val.npy')
+            else:
+                onehots_val=0
+
             #data saved for forward sim
             forwardsim_x_true = np.load(save_dir+ '/data/forwardsim_x_true.npy')
             forwardsim_y = np.load(save_dir+ '/data/forwardsim_y.npy')
+
+            if(use_one_hot):
+                forwardsim_onehot = np.load(save_dir+ '/data/forwardsim_onehot.npy')
+            else:
+                forwardsim_onehot=0
 
         else:
 
@@ -229,6 +289,7 @@ def main():
             dataX=[]
             dataY=[]
             dataZ=[]
+            dataOneHots=[]
             # for rollout_counter in training_rollouts:
             for i in range(training_rollouts/2):
 
@@ -252,14 +313,22 @@ def main():
                 dataX.append(states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
                 dataY.append(actions_for_dataY[:-1,:])
                 dataZ.append(states_for_dataZ)
+
+                #create the corresponding one_hot vector
+                curr_surface = mocap_file.split("/")[-2].split("_")[0]
+                curr_onehot= create_onehot(curr_surface, use_camera, mappings)
+                tiled_curr_onehot = np.tile(curr_onehot,(states_for_dataX.shape[0]-1,1))
+                dataOneHots.append(tiled_curr_onehot)
             
             #save training data
             dataX=np.concatenate(dataX)
             dataY=np.concatenate(dataY)
             dataZ=np.concatenate(dataZ)
+            dataOneHots=np.concatenate(dataOneHots)
             np.save(save_dir+ '/data/dataX.npy', dataX)
             np.save(save_dir+'/data/dataY.npy', dataY)
             np.save(save_dir+ '/data/dataZ.npy', dataZ)
+            np.save(save_dir+ '/data/dataOneHots.npy', dataOneHots)
 
             ######################################
             ########## VALIDATION DATA ###########
@@ -267,6 +336,7 @@ def main():
 
             states_val = []
             controls_val = []
+            onehots_val = []
             # for rollout_counter in validation_rollouts:
             for i in range(validation_rollouts/2):
 
@@ -280,21 +350,31 @@ def main():
 
                 #turn saved rollout into s
                 states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, state_representation)
-
                 states_val.append(states_for_dataX)
                 controls_val.append(actions_for_dataY)
+
+                #create the corresponding one_hot vector
+                curr_surface = mocap_file.split("/")[-2].split("_")[0]
+                curr_onehot= create_onehot(curr_surface, use_camera, mappings)
+                tiled_curr_onehot = np.tile(curr_onehot,(states_for_dataX.shape[0],1))
+                onehots_val.append(tiled_curr_onehot)
 
             #save validation data
             states_val = np.array(states_val)
             controls_val = np.array(controls_val)
+            onehots_val = np.array(onehots_val)
             np.save(save_dir+ '/data/states_val.npy', states_val)
             np.save(save_dir+ '/data/controls_val.npy', controls_val)
+            np.save(save_dir+ '/data/onehots_val.npy', onehots_val)
 
             #set aside un-preprocessed data, to use later for forward sim
-            forwardsim_x_true = states_for_dataX[4:16] #20:50
-            forwardsim_y = actions_for_dataY[4:16] #20:50
+            forwardsim_x_true = states_for_dataX[4:16] #use these steps from the last validation rollout
+            forwardsim_y = actions_for_dataY[4:16] #use these steps from the last validation rollout
+            forwardsim_onehot = tiled_curr_onehot[4:16] #use these steps from the last validation rollout
+
             np.save(save_dir+ '/data/forwardsim_x_true.npy', forwardsim_x_true)
             np.save(save_dir+ '/data/forwardsim_y.npy', forwardsim_y)
+            np.save(save_dir+ '/data/forwardsim_onehot.npy', forwardsim_onehot)
 
         #################################################
         ### preprocess the old training dataset
@@ -331,6 +411,7 @@ def main():
         ## concatenate state and action, to be used for training dynamics
         inputs = np.concatenate((dataX, dataY), axis=1)
         outputs = np.copy(dataZ)
+        onehots = np.copy(dataOneHots)
 
         #dimensions
         assert inputs.shape[0] == outputs.shape[0]
@@ -342,8 +423,20 @@ def main():
         ########### THE DYNAMICS MODEL ###############
         ##############################################
     
+        #which model
+        if(use_one_hot):
+            if(use_camera):
+                from feedforward_network_camera import feedforward_network
+            else:
+                from feedforward_network_one_hot import feedforward_network
+        else:
+            from feedforward_network import feedforward_network
+
         #initialize model
-        dyn_model = Dyn_Model(inputSize, outputSize, sess, lr, batchsize, 0, x_index, y_index, num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, print_minimal)
+        dyn_model = Dyn_Model(inputSize, outputSize, sess, lr, batchsize, 0, x_index, y_index, 
+                            num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, 
+                            std_x, std_y, std_z, tf_datatype, np_datatype, print_minimal, feedforward_network, 
+                            use_one_hot, curr_env_onehot, N,one_hot_dims=one_hot_dims)
 
         #randomly initialize all vars
         sess.run(tf.initialize_all_variables())  ##sess.run(tf.global_variables_initializer()) 
@@ -351,6 +444,8 @@ def main():
         ##############################################
         ########## THE AGGREGATION LOOP ##############
         ##############################################
+
+        '''TO DO: havent done one-hots for aggregation'''
 
         counter=0
         training_loss_list=[]
@@ -364,13 +459,15 @@ def main():
         if(playback_mode):
             controller = ControllerPlayback(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
                                 left_min, left_max, right_min, right_max, 
-                                use_pid_mode=use_pid_mode, frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
-                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS)
+                                use_pid_mode=use_pid_mode,
+                                frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
         else:
             controller = Controller(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
                                 left_min, left_max, right_min, right_max, 
-                                use_pid_mode=use_pid_mode, frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
-                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS)
+                                use_pid_mode=use_pid_mode,
+                                frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
 
         while(counter<num_aggregation_iters):
 
@@ -406,13 +503,13 @@ def main():
             new_loss=0
 
             if(counter>0):
-                training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, inputs_new, outputs_new, nEpoch, save_dir, fraction_use_new)
+                training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, onehots, inputs_new, outputs_new, nEpoch, save_dir, fraction_use_new)
             if(counter==0):
                 if(train_now):
-                    training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, inputs_new, outputs_new, nEpoch_initial, save_dir, fraction_use_new)
+                    training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, onehots, inputs_new, outputs_new, nEpoch_initial, save_dir, fraction_use_new)
                 else:
                     saver = tf.train.Saver()
-                    saver.restore(sess, save_dir+ '/models/model_aggIter' +str(counter)+ '.ckpt')
+                    saver.restore(sess, restore_dynamics_model_filepath)
 
             #how good is model on training data
             training_loss_list.append(training_loss)
@@ -529,10 +626,10 @@ def main():
                 print("\n#####################################")
                 print("Performing a forward simulation of the learned model... using a pre-saved dataset... just for visualization purposes")
                 print("#####################################\n")
-            
+
                 #for a given set of controls ... compare sim traj vs. learned model's traj (dont expect this to be good cuz error accum)
                 many_in_parallel=False
-                forwardsim_x_pred = dyn_model.do_forward_sim(forwardsim_x_true, forwardsim_y, many_in_parallel, None, None)    
+                forwardsim_x_pred = dyn_model.do_forward_sim(forwardsim_x_true, forwardsim_y, forwardsim_onehot, many_in_parallel, None, None)    
                 forwardsim_x_pred = np.array(forwardsim_x_pred)
 
                 # save results of forward sim

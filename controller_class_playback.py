@@ -48,11 +48,12 @@ class ControllerPlayback(object):
     # def __init__(self, save_dir, dt_steps, state_representation, min_motor_gain, max_motor_gain, frequency_value=20, stateSize=24, actionSize=2):
     def __init__(self, traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
                 left_min, left_max, right_min, right_max, 
-                use_pid_mode,frequency_value=20, stateSize=24, actionSize=2,
-                N=1000, horizon=4, serial_port='/dev/ttyUSB0', baud_rate = 57600, DEFAULT_ADDRS = ['\x00\x01']):
+                use_pid_mode,
+                frequency_value=20, stateSize=24, actionSize=2,
+                N=1000, horizon=4, serial_port='/dev/ttyUSB0', baud_rate = 57600, DEFAULT_ADDRS = ['\x00\x01'],visualize_rviz=False):
 
-      self.desired_shape_for_traj = "straight" #straight, left, right, circle_left, zigzag, figure8
-
+      self.desired_shape_for_traj = desired_shape_for_traj
+      self.visualize_rviz = visualize_rviz
       self.frequency_value = frequency_value
       self.state_representation = state_representation
 
@@ -76,7 +77,7 @@ class ControllerPlayback(object):
       # self.min_ac = np.ones(self.action_shape)*self.min_motor_gain
       # self.max_ac = np.ones(self.action_shape)*self.max_motor_gain
 
-      self.a = Actions()
+      self.a = Actions(visualize_rviz=self.visualize_rviz)
 
       self.dt_steps=dt_steps
       self.stateSize = stateSize
@@ -84,13 +85,11 @@ class ControllerPlayback(object):
       self.outputSize = self.stateSize
 
       #controller vars
-      self.N=1000
-      self.horizon = dt_steps*8
+      self.N= N
+      self.horizon = horizon
       self.horiz_penalty_factor= 20
-      self.forward_encouragement_factor= 30
       self.backward_discouragement= 0
       self.heading_penalty_factor= 3
-      self.perp_dist_threshold = 0.3
 
       #read in means and stds
       self.mean_x= np.load(self.save_dir+ '/data/mean_x.npy')
@@ -183,11 +182,17 @@ class ControllerPlayback(object):
       mocap_file = "../data_collection/carpet_2018_02_13_11_44_24/9_mocap_info.obj"
 
       #turn
-      robot_file = "../data_collection/carpet_2018_02_13_11_44_24/4_robot_info.obj"
+      '''robot_file = "../data_collection/carpet_2018_02_13_11_44_24/4_robot_info.obj"
       mocap_file = "../data_collection/carpet_2018_02_13_11_44_24/4_mocap_info.obj"
 
       #gravel
       robot_file = "../data_collection/gravel_2018_02_02_18_07_34/0_robot_info.obj"
+      mocap_file = "../data_collection/gravel_2018_02_02_18_07_34/0_mocap_info.obj"
+
+      #styrofoam
+      robot_file = "../data_collection/styrofoam_2018_02_16_15_05_52/0_robot_info.obj"
+      mocap_file = "../data_collection/styrofoam_2018_02_16_15_05_52/0_mocap_info.obj"   '''   
+
 
       all_robot_info = pickle.load(open(robot_file,'r'))
       all_mocap_info = pickle.load(open(mocap_file,'r'))
@@ -233,6 +238,11 @@ class ControllerPlayback(object):
             old_al= robotinfo.posL/math.pow(2,16)*2*math.pi #curr al
             old_ar= robotinfo.posR/math.pow(2,16)*2*math.pi #curr ar
 
+          #check dt of controller
+          if(num_iters>0):
+            step_dt = (robotinfo.stamp.secs-old_time.secs) + (robotinfo.stamp.nsecs-old_time.nsecs)*0.000000001
+            print("DT: ", step_dt)
+
           curr_state, old_time, old_pos, old_al, old_ar = singlestep_to_state(robotinfo, mocapinfo, old_time, old_pos, old_al, old_ar, self.state_representation)
 
           ########################
@@ -264,5 +274,5 @@ class ControllerPlayback(object):
             self.save_desired_heading.append(save_desired_heading)
             self.save_curr_heading.append(save_curr_heading)
 
-          print("computed action")
+          #print("computed action")
           num_iters+=1

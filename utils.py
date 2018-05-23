@@ -5,6 +5,7 @@ from Queue import Queue
 from collections import OrderedDict
 import math
 import copy
+import tensorflow as tf
 
 def setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, top):
 
@@ -25,7 +26,7 @@ def setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, top):
 		for r in robots:
 			r.running = False
 			r.VERBOSE = False
-			r.setPIDOutputChannel(top)
+			r.setPIDOutputChannel(1)
 			if(use_pid_mode):
 				r.PIDStartMotors()
 				r.running = True
@@ -131,6 +132,61 @@ def quat_to_eulerDegrees(orientation):
   Z = math.degrees(math.atan2(t3, t4))
   
   return [X,Y,Z] 
+
+#datatypes
+tf_datatype= tf.float32
+np_datatype= np.float32
+
+mappings = np.load("images.npy")
+
+def create_onehot(curr_surface, use_camera = False, mappings= None):
+    curr_onehot = None
+
+    if (use_camera):
+
+        index = 0
+        if(curr_surface=='carpet'):
+            index = 0
+        if(curr_surface=='gravel'):
+            index = 20
+        if(curr_surface=='turf'):
+            index = 30
+        if(curr_surface=='styrofoam'):
+            index = 10
+        index += np.random.randint(10)
+        curr_onehot = mappings[index]
+        curr_onehot=np.array(list(curr_onehot) + [1])
+
+
+        #mean vec (used to do this with subtracting old mean, rather than new mean in myalexnet)
+        '''mean_carpet = np.mean(mappings[0:10,:], axis=0)
+        mean_gravel = np.mean(mappings[10:20,:], axis=0)
+        mean_turf = np.mean(mappings[20:30,:], axis=0)
+        mean_sty = np.mean(mappings[30:40,:], axis=0)
+
+        if(curr_surface=='carpet'):
+            curr_onehot = mean_carpet
+        if(curr_surface=='gravel'):
+            curr_onehot = mean_gravel
+        if(curr_surface=='turf'):
+            curr_onehot = mean_turf
+        if(curr_surface=='styrofoam'):
+            curr_onehot = mean_sty
+        curr_onehot=np.array(list(curr_onehot) + [1])'''
+        
+    else:
+        #use one hot
+        curr_onehot = np.zeros((1,4)).astype(np_datatype)
+        if(curr_surface=='carpet'):
+            curr_onehot[0,0]=1
+        if(curr_surface=='gravel'):
+            curr_onehot[0,1]=1
+        if(curr_surface=='turf'):
+            curr_onehot[0,2]=1
+        if(curr_surface=='styrofoam'):
+            curr_onehot[0,3]=1
+
+    return curr_onehot
 
 def singlestep_to_state(robot_info, mocap_info, old_time, old_pos, old_al, old_ar, state_representation):
 

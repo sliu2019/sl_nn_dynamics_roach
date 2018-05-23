@@ -37,8 +37,9 @@ from trajectories import make_trajectory
 
 class Actions(object):
 
-    def __init__(self):
-    	junk=1
+    def __init__(self,visualize_rviz=False):
+      junk=1
+      self.visualize_rviz = visualize_rviz
 
 
     def compute_optimal_action(self,curr_state, desired_states, left_min, left_max, right_min, right_max, currently_executing_action, step, dyn_model, N, horizon, dt_steps, x_index, y_index, yaw_cos_index, yaw_sin_index, mean_x, mean_y, mean_z, std_x, std_y, std_z, publish_markers_desired, publish_markers, curr_line_segment, horiz_penalty_factor, backward_discouragement, heading_penalty_factor, old_curr_forward):
@@ -134,7 +135,7 @@ class Actions(object):
 
       #run forward sim to predict possible trajectories
       many_in_parallel=True
-      resulting_states = dyn_model.do_forward_sim([curr_state,0], np.copy(all_samples), many_in_parallel, None, None)
+      resulting_states = dyn_model.do_forward_sim([curr_state,0], np.copy(all_samples), None, many_in_parallel, None, None)
       resulting_states= np.array(resulting_states) #this is [horizon+1, N, statesize]
 
       #evaluate the trajectories
@@ -257,57 +258,53 @@ class Actions(object):
       best_sim_number = np.argmin(scores) 
       best_sequence = all_samples[best_sim_number]
 
-      #publish the desired traj
-      markerArray2 = MarkerArray()
-      marker_id=0
-      for des_pt_num in range(5): #5 for all, 8 for circle, 4 for zigzag
-        marker = Marker()
-        marker.id=marker_id
-        marker.header.frame_id = "/world"
-        marker.type = marker.SPHERE
-        marker.action = marker.ADD
-        marker.scale.x = 0.15
-        marker.scale.y = 0.15
-        marker.scale.z = 0.15
-        marker.color.a = 1.0
-        marker.color.r = 0.0
-        marker.color.g = 0.0
-        marker.color.b = 1.0
-        marker.pose.position.x = desired_states[des_pt_num,0]
-        marker.pose.position.y = desired_states[des_pt_num,1]
-        marker.pose.position.z = 0
-        markerArray2.markers.append(marker)
-        marker_id+=1
-      publish_markers_desired.publish(markerArray2)
+      if(self.visualize_rviz):
+        #publish the desired traj
+        markerArray2 = MarkerArray()
+        marker_id=0
+        for des_pt_num in range(5): #5 for all, 8 for circle, 4 for zigzag
+          marker = Marker()
+          marker.id=marker_id
+          marker.header.frame_id = "/world"
+          marker.type = marker.SPHERE
+          marker.action = marker.ADD
+          marker.scale.x = 0.15
+          marker.scale.y = 0.15
+          marker.scale.z = 0.15
+          marker.color.a = 1.0
+          marker.color.r = 0.0
+          marker.color.g = 0.0
+          marker.color.b = 1.0
+          marker.pose.position.x = desired_states[des_pt_num,0]
+          marker.pose.position.y = desired_states[des_pt_num,1]
+          marker.pose.position.z = 0
+          markerArray2.markers.append(marker)
+          marker_id+=1
+        publish_markers_desired.publish(markerArray2)
 
-      #publish the best sequence selected
-      best_sequence_of_states= resulting_states[:,best_sim_number,:] # (h+1)x(stateSize)
-      markerArray = MarkerArray()
-      marker_id=0
-      for marker_num in range(resulting_states.shape[0]):
-        marker = Marker()
-        marker.id=marker_id
-        marker.header.frame_id = "/world"
-        marker.type = marker.SPHERE
-        marker.action = marker.ADD
-        marker.scale.x = 0.1
-        marker.scale.y = 0.1
-        marker.scale.z = 0.1
-        marker.color.a = 1.0
-        marker.color.r = 1.0
-        marker.color.g = 0.0
-        marker.color.b = 0.0
-        marker.pose.position.x = best_sequence_of_states[marker_num,0]
-        marker.pose.position.y = best_sequence_of_states[marker_num,1]
-        marker.pose.position.z = 0
-        markerArray.markers.append(marker)
-        marker_id+=1
-      publish_markers.publish(markerArray)
-
-      '''#advance which line segment we are on
-      if(moved_to_next[best_sim_number]==1):
-          curr_line_segment+=1
-          print("**************************** MOVED ONTO NEXT LINE SEG")'''
+        #publish the best sequence selected
+        best_sequence_of_states= resulting_states[:,best_sim_number,:] # (h+1)x(stateSize)
+        markerArray = MarkerArray()
+        marker_id=0
+        for marker_num in range(resulting_states.shape[0]):
+          marker = Marker()
+          marker.id=marker_id
+          marker.header.frame_id = "/world"
+          marker.type = marker.SPHERE
+          marker.action = marker.ADD
+          marker.scale.x = 0.1
+          marker.scale.y = 0.1
+          marker.scale.z = 0.1
+          marker.color.a = 1.0
+          marker.color.r = 1.0
+          marker.color.g = 0.0
+          marker.color.b = 0.0
+          marker.pose.position.x = best_sequence_of_states[marker_num,0]
+          marker.pose.position.y = best_sequence_of_states[marker_num,1]
+          marker.pose.position.z = 0
+          markerArray.markers.append(marker)
+          marker_id+=1
+        publish_markers.publish(markerArray)
 
       #the 0th entry is the currently executing action... so the 1st entry is the optimal action to take
       action_to_take = np.copy(best_sequence[dt_steps])
