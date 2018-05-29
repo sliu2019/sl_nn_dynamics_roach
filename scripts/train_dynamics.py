@@ -20,6 +20,8 @@ from scipy.signal import medfilt
 #add nn_dynamics_roach to sys.path
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+for p in sys.path:
+    print(p)
 
 #my imports
 from nn_dynamics_roach.msg import velroach_msg
@@ -43,19 +45,19 @@ def main():
     ##################################
 
     #saving filenames
-    run_num= 52                                         #directory for saving everything
-    desired_shape_for_traj = "right"                     #straight, left, right, circle_left, zigzag, figure8
+    run_num= 53                                         #directory for saving everything
+    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
     save_run_num = 0
     traj_save_path= desired_shape_for_traj + str(save_run_num)     #directory name inside run_num directory
 
     
     #which saved model to potentially load from
-    model_name = 'turf'     #onehot_smaller, combined, camera
+    model_name = 'carpet'     #onehot_smaller, combined, camera
 
     #which setting to run in
     use_one_hot= False #True
     use_camera = False #True
-    curr_env_onehot = create_onehot('turf', use_camera, mappings)
+    curr_env_onehot = create_onehot('carpet', use_camera, mappings)
 
     #PID (velocity) vs PWM (thrust)
     use_pid_mode = True      
@@ -65,7 +67,7 @@ def main():
     serial_port = '/dev/ttyUSB0'
 
     #what training data to read in
-    task_type=['turf']            #task_type=['carpet','styrofoam', 'gravel', 'turf']      #'carpet','styrofoam', 'gravel', 'turf', 'all'
+    task_type=['carpet']            #task_type=['carpet','styrofoam', 'gravel', 'turf']      #'carpet','styrofoam', 'gravel', 'turf', 'all'
     months = ['02']
     training_ratio = 0.9
     data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
@@ -82,14 +84,14 @@ def main():
     lr = 0.001
     
     #controller
-    visualize_rviz=True     #turning this off could make things go faster
+    visualize_rviz=True   #turning this off could make things go faster
     if(use_one_hot):
         N=400
     else:
         N=500
     horizon = 5 #4
     frequency_value=10
-    playback_mode = True
+    playback_mode = False
 
     #length of controller run
     #num_steps_per_controller_run=50

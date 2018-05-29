@@ -41,30 +41,39 @@ ydim = train_y.shape[1]
 ################################################################################
 #Read Image, and change to BGR
 
+# images = []
+# for i in range(10):
+#   im1 = (imread("/home/anagabandi/roach_workspace/src/nn_dynamics_roach/images/styrofoam_images_" + str(i) + ".jpg")[:,:,:3]).astype(float32)
+#   im1 = im1 - mean(im1)
+#   im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
+#   images.append(im1)
+
+# for i in range(10):
+#   im1 = (imread("/home/anagabandi/roach_workspace/src/nn_dynamics_roach/images/gravel_images_" + str(i) + ".jpg")[:,:,:3]).astype(float32)
+#   im1 = im1 - mean(im1)
+#   im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
+#   images.append(im1)
+
+# for i in range(10):
+#   im1 = (imread("/home/anagabandi/roach_workspace/src/nn_dynamics_roach/images/carpet_images_" + str(i) + ".jpg")[:,:,:3]).astype(float32)
+#   im1 = im1 - mean(im1)
+#   im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
+#   images.append(im1)
+
+# for i in range(10):
+#   im1 = (imread("/home/anagabandi/roach_workspace/src/nn_dynamics_roach/images/turf_images_" + str(i) + ".jpg")[:,:,:3]).astype(float32)
+#   im1 = im1 - mean(im1)
+#   im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
+#   images.append(im1)
 images = []
-for i in range(10):
-  im1 = (imread("/home/anagabandi/roach_workspace/src/nn_dynamics_roach/images/styrofoam_images_" + str(i) + ".jpg")[:,:,:3]).astype(float32)
-  im1 = im1 - mean(im1)
-  im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
-  images.append(im1)
-
-for i in range(10):
-  im1 = (imread("/home/anagabandi/roach_workspace/src/nn_dynamics_roach/images/gravel_images_" + str(i) + ".jpg")[:,:,:3]).astype(float32)
-  im1 = im1 - mean(im1)
-  im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
-  images.append(im1)
-
-for i in range(10):
-  im1 = (imread("/home/anagabandi/roach_workspace/src/nn_dynamics_roach/images/carpet_images_" + str(i) + ".jpg")[:,:,:3]).astype(float32)
-  im1 = im1 - mean(im1)
-  im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
-  images.append(im1)
-
-for i in range(10):
-  im1 = (imread("/home/anagabandi/roach_workspace/src/nn_dynamics_roach/images/turf_images_" + str(i) + ".jpg")[:,:,:3]).astype(float32)
-  im1 = im1 - mean(im1)
-  im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
-  images.append(im1)
+directories = ["/home/anagabandi/Pictures/carpet_images/final", "/home/anagabandi/Pictures/styrofoam_images/final", "/home/anagabandi/Pictures/turf_images/final"]
+for directory in directories:
+  for filename in os.listdir(directory):
+    # Preprocess by subtracting the mean, and converting from RGB to BGR
+    im = (imread(directory + "/" + filename)[:,:,:3]).astype(float32)
+    im = im - mean(im)
+    im[:, :, 0], im[:, :, 2] = im[:, :, 2], im[:, :, 0]
+    images.append(im)
 #
 
 ################################################################################
@@ -107,7 +116,7 @@ def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group
     return  tf.reshape(tf.nn.bias_add(conv, biases), [-1]+conv.get_shape().as_list()[1:])
 
 
-
+print(xdim)
 x = tf.placeholder(tf.float32, (None,) + xdim)
 
 
@@ -225,7 +234,7 @@ def getPointsAndMean(layerOut, inDim, outDim):
   for i in layerOut:
     points.append(i.dot(matrix))
   mean = np.zeros((4, outDim))
-  for i in range(4):
+  for i in range(3):
     for j in range(10):
       mean[i] += points[i*10 + j]
     mean[i] *= 1.0
@@ -235,6 +244,7 @@ def getPointsAndMean(layerOut, inDim, outDim):
 
 #output = sess.run(maxpool2, feed_dict = {x:images})
 #outputTwo = sess.run(maxpool5, feed_dict = {x:images})
+print("before calling convnet")
 output = sess.run(fc8, feed_dict = {x: images})
 
 out = []
@@ -253,7 +263,7 @@ points, mean = getPointsAndMean(out, len(out[0]), 10)
 #points_5, mean_5 = getPointsAndMean(out2, 9216, 50)
 #points_3, mean_3 = getPointsAndMean(out3, 43264 / 4, 50)
 accuracy = np.zeros(4)
-for k in range(4):
+for k in range(3):
   for i in range(k*10, (k+1)*10):
     maxP = -1
     maxVal = 99999999
