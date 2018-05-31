@@ -20,8 +20,6 @@ from scipy.signal import medfilt
 #add nn_dynamics_roach to sys.path
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-for p in sys.path:
-    print(p)
 
 #my imports
 from nn_dynamics_roach.msg import velroach_msg
@@ -44,17 +42,39 @@ def main():
     ######### SPECIFY VARS ###########
     ##################################
 
-    #saving filenames
+    # Which trajectory, saving filenames
     run_num= 53                                         #directory for saving everything
     desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
     save_run_num = 0
     traj_save_path= desired_shape_for_traj + str(save_run_num)     #directory name inside run_num directory
 
-    
-    #which saved model to potentially load from
-    model_name = 'carpet'     #onehot_smaller, combined, camera
+    #######TRAINING########## 
+    train_now = False
 
+    # train_now = False: which saved model to potentially load from
+    model_name = 'carpet'     #onehot_smaller, combined, camera
+    
+    # train_now = True: select training data
+    use_existing_data = True #Basically, if true, use pre-processed data; false, re-pre-process the data specified below
+    # use_existing_data = true. Specify task between: 'carpet','styrofoam', 'gravel', 'turf', 'all'
+    task_type=['carpet']                 
+    months = ['02']
+    data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
+
+    # training/validation split
+    training_ratio = 0.9
+
+    nEpoch_initial = 50
+    nEpoch = 20
+    state_representation = "all"
+    num_fc_layers = 2
+    depth_fc_layers = 500
+    batchsize = 1000
+    lr = 0.001
+
+    ###########TESTING############
     #which setting to run in
+    # Doesn't use_one_hot have to be the negation of use_camera? If so, why are there 2 variables?
     use_one_hot= False #True
     use_camera = False #True
     curr_env_onehot = create_onehot('carpet', use_camera, mappings)
@@ -66,23 +86,6 @@ def main():
     #xbee connection port
     serial_port = '/dev/ttyUSB0'
 
-    #what training data to read in
-    task_type=['carpet']            #task_type=['carpet','styrofoam', 'gravel', 'turf']      #'carpet','styrofoam', 'gravel', 'turf', 'all'
-    months = ['02']
-    training_ratio = 0.9
-    data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
-
-    #dynamics model training
-    use_existing_data = True
-    train_now = False
-    nEpoch_initial = 50
-    nEpoch = 20
-    state_representation = "all"
-    num_fc_layers = 2
-    depth_fc_layers = 500
-    batchsize = 1000
-    lr = 0.001
-    
     #controller
     visualize_rviz=True   #turning this off could make things go faster
     if(use_one_hot):
