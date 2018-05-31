@@ -142,10 +142,12 @@ class Controller(object):
       self.xb, self.robots, shared.imu_queues = setup_roach(self.serial_port, self.baud_rate, self.DEFAULT_ADDRS, self.use_pid_mode, 1)
 
       #set PID gains
+      #IPython.embed()
       for robot in self.robots:
         if(self.use_pid_mode):
           robot.setMotorGains([1800,200,100,0,0, 1800,200,100,0,0])
 
+      #IPython.embed()
       #make subscribers
       self.sub_mocap = rospy.Subscriber('/mocap/pose', PoseStamped, self.callback_mocap)
 
