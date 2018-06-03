@@ -237,6 +237,13 @@ def singlestep_to_state(robot_info, mocap_info, old_time, old_pos, old_al, old_a
 									np.cos(al), np.sin(al), np.cos(ar), np.sin(ar), 
 									vel_al, vel_ar, 
 									robot_info.bemfL, robot_info.bemfR, robot_info.vBat])
+	elif(state_representation == "exclude_x_y"):
+		state = np.array([ vel_x, vel_y, vel_z, 
+								np.cos(r), np.sin(r), np.cos(p), np.sin(p), np.cos(yw), np.sin(yw), 
+								wx, wy, wz, 
+								np.cos(al), np.sin(al), np.cos(ar), np.sin(ar), 
+								vel_al, vel_ar, 
+								robot_info.bemfL, robot_info.bemfR, robot_info.vBat])	
 
 	#save curr as old
 	old_time= copy.deepcopy(curr_time)
@@ -303,7 +310,15 @@ def rollout_to_states(robot_info, mocap_info, state_representation):
 											np.cos(al), np.sin(al), np.cos(ar), np.sin(ar), 
 											vel_al, vel_ar, 
 											robot_info[step].bemfL, robot_info[step].bemfR, robot_info[step].vBat])
-				list_states.append(states)
+			elif(state_representation == "exclude_x_y"):
+				states = np.array([ vel_x, vel_y, vel_z, 
+											np.cos(r), np.sin(r), np.cos(p), np.sin(p), np.cos(yw), np.sin(yw), 
+											wx, wy, wz, 
+											np.cos(al), np.sin(al), np.cos(ar), np.sin(ar), 
+											vel_al, vel_ar, 
+											robot_info[step].bemfL, robot_info[step].bemfR, robot_info[step].vBat])				
+			list_states.append(states)
+
 
 			#create the action
 			action=np.array([robot_info[step].curLeft, robot_info[step].curRight])

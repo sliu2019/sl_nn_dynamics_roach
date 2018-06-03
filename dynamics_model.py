@@ -243,7 +243,10 @@ class Dyn_Model:
 
     #multistep prediction using the learned dynamics model at each step
     def do_forward_sim(self, forwardsim_x_true, forwardsim_y, forwardsim_onehot, many_in_parallel, env_inp, which_agent):
-
+        # forwardsim_x_true: actual state sequence: should be a full state representation
+        # forwardsim_y : action sequence
+        # forwardsim_onehot : fake tiled onehots
+        # many_in_parallel: evaluate many action sequences simultaneously just using matrix-vector notation
         #init vars
         state_list = []
 
@@ -271,7 +274,10 @@ class Dyn_Model:
                 state_list.append(np.copy(curr_states))
 
                 #make [N x (state,action)] array to pass into NN
-                states_preprocessed = np.nan_to_num(np.divide((curr_states-array_meanx), array_stdx))
+                # Assuming that the position (x, y, z) are in the 1st three entries of state
+                #print("inside forward_sim, the curr_state shape is: ", curr_states.shape)
+                abbrev_curr_states = curr_states[:, 3:]
+                states_preprocessed = np.nan_to_num(np.divide((abbrev_curr_states-array_meanx), array_stdx))
                 actions_preprocessed = np.nan_to_num(np.divide((forwardsim_y[:,timestep,:]-array_meany), array_stdy))
                 inputs_list= np.concatenate((states_preprocessed, actions_preprocessed), axis=1)
 
@@ -300,7 +306,9 @@ class Dyn_Model:
                     curr_onehot= np.ones((1,self.one_hot_dims))
 
                 #subtract mean and divide by standard deviation
-                curr_state_preprocessed = curr_state - self.mean_x
+                #print("inside forward sim, and the dimension of curr_state is: ", curr_state.shape)
+                abbrev_curr_state = curr_state[3:]
+                curr_state_preprocessed = abbrev_curr_state - self.mean_x
                 curr_state_preprocessed = np.nan_to_num(curr_state_preprocessed/self.std_x)
                 curr_control_preprocessed = curr_control - self.mean_y
                 curr_control_preprocessed = np.nan_to_num(curr_control_preprocessed/self.std_y)

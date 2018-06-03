@@ -155,7 +155,7 @@ class Controller(object):
       self.publish_robotinfo= rospy.Publisher('/robot0/robotinfo', velroach_msg, queue_size=5)
       self.publish_markers= rospy.Publisher('visualize_selected', MarkerArray, queue_size=5)
       self.publish_markers_desired= rospy.Publisher('visualize_desired', MarkerArray, queue_size=5)
-      self.pub_curr_state= rospy.Publisher('curr_state', Float32MultiArray, queue_size=5)
+      self.pub_full_curr_state= rospy.Publisher('full_curr_state', Float32MultiArray, queue_size=5)
 
       #action selector (MPC)
       self.a = Actions(visualize_rviz=self.visualize_rviz)
@@ -258,7 +258,10 @@ class Controller(object):
           print("DT: ", step_dt)
 
         #create state from the info
-        curr_state, old_time, old_pos, old_al, old_ar = singlestep_to_state(robotinfo, self.mocap_info, old_time, old_pos, old_al, old_ar, self.state_representation)
+        full_curr_state, _, _, _, _ = singlestep_to_state(robotinfo, self.mocap_info, old_time, old_pos, old_al, old_ar, "all")
+        # print("full_curr_state position, after singlesteptostate:", full_curr_state)
+        # print("mocap info: ", self.mocap_info)
+        abbrev_curr_state, old_time, old_pos, old_al, old_ar = singlestep_to_state(robotinfo, self.mocap_info, old_time, old_pos, old_al, old_ar, self.state_representation)
 
         #########################
         ## CHECK STOPPING COND ##
@@ -296,15 +299,15 @@ class Controller(object):
 
         if(step==0):
           #create desired trajectory
-          print("starting x position: ", curr_state[self.x_index])
-          print("starting y position: ", curr_state[self.y_index])
-          self.desired_states = make_trajectory(self.desired_shape_for_traj, np.copy(curr_state), self.x_index, self.y_index)
+          print("starting x position: ", full_curr_state[self.x_index])
+          print("starting y position: ", full_curr_state[self.y_index])
+          self.desired_states = make_trajectory(self.desired_shape_for_traj, np.copy(full_curr_state), self.x_index, self.y_index)
 
         if(step%self.dt_steps == 0):
-          self.traj_taken.append(curr_state)
+          self.traj_taken.append(full_curr_state)
           optimal_action, curr_line_segment, old_curr_forward, \
               save_perp_dist, save_forward_dist, saved_old_forward_dist, \
-              save_moved_to_next, save_desired_heading, save_curr_heading = self.a.compute_optimal_action(np.copy(curr_state), self.desired_states, \
+              save_moved_to_next, save_desired_heading, save_curr_heading = self.a.compute_optimal_action(np.copy(full_curr_state), np.copy(abbrev_curr_state), self.desired_states, \
                                                                                                           self.left_min, self.left_max, self.right_min, self.right_max, \
                                                                                                           np.copy(optimal_action), step, self.dyn_model, self.N, \
                                                                                                           self.horizon, self.dt_steps, self.x_index, self.y_index, \

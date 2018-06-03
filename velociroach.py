@@ -108,10 +108,11 @@ class Velociroach:
       
     
     def PIDStartMotors(self):
-      self.tx(0, command.PID_START_MOTORS)
+        self.tx(0, command.PID_START_MOTORS)
 
     def PIDStopMotors(self):
-      self.tx(0, command.PID_STOP_MOTORS)
+        #print("stopping PID motors")
+        self.tx(0, command.PID_STOP_MOTORS)
     
     def setMotorSpeeds(self, spleft, spright):
       thrust = [spleft, 0, spright, 0, 0]

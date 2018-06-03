@@ -43,8 +43,8 @@ def main():
     ##################################
 
     # Which trajectory, saving filenames
-    run_num= 53                                         #directory for saving everything
-    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
+    run_num= 1                                         #directory for saving everything
+    desired_shape_for_traj = "left"                     #straight, left, right, circle_left, zigzag, figure8
     save_run_num = 0
     traj_save_path= desired_shape_for_traj + str(save_run_num)     #directory name inside run_num directory
 
@@ -52,21 +52,28 @@ def main():
     train_now = False
 
     # train_now = False: which saved model to potentially load from
-    model_name = 'carpet'     #onehot_smaller, combined, camera
+    model_name = 'camera_no_xy'     #onehot_smaller, combined, camera
     
     # train_now = True: select training data
     use_existing_data = True #Basically, if true, use pre-processed data; false, re-pre-process the data specified below
     # use_existing_data = true. Specify task between: 'carpet','styrofoam', 'gravel', 'turf', 'all'
-    task_type=['carpet']                 
-    months = ['02']
+    task_type=['all']                 
+    months = ['01','02']
     data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
+
+    # Doesn't use_one_hot have to be the negation of use_camera? If so, why are there 2 variables?
+    # Use one hot is if you're going to have a conditioned NN or not; use camera is if it's going to be 1-hot or camera
+    use_one_hot= True #True
+    use_camera = True #True
+    #Cheating method: what you do when no camera live-feed
+    curr_env_onehot = create_onehot('carpet', use_camera, mappings)
 
     # training/validation split
     training_ratio = 0.9
 
     nEpoch_initial = 50
     nEpoch = 20
-    state_representation = "all"
+    state_representation = "exclude_x_y" #["exclude_x_y", "all"]
     num_fc_layers = 2
     depth_fc_layers = 500
     batchsize = 1000
@@ -74,10 +81,7 @@ def main():
 
     ###########TESTING############
     #which setting to run in
-    # Doesn't use_one_hot have to be the negation of use_camera? If so, why are there 2 variables?
-    use_one_hot= False #True
-    use_camera = False #True
-    curr_env_onehot = create_onehot('carpet', use_camera, mappings)
+
 
     #PID (velocity) vs PWM (thrust)
     use_pid_mode = True      
@@ -103,7 +107,7 @@ def main():
         if (task_type==['gravel']):
             num_steps_per_controller_run=85
     elif(desired_shape_for_traj=='left'):
-        num_steps_per_controller_run= 130
+        num_steps_per_controller_run= 160
         if(task_type==['turf']):
             num_steps_per_controller_run=110
     elif(desired_shape_for_traj=='right'):
@@ -142,7 +146,7 @@ def main():
         if len(lst) >= 3:
             surface = lst[0]
             month = lst[2]
-            if ((surface in task_type or task_type == "all") and month in months):
+            if ((surface in task_type or "all" in task_type) and month in months):
                 for file in files:
                     path_lst.append(os.path.join(subdir, file))
     path_lst.sort()
@@ -262,6 +266,8 @@ def main():
             dataY = np.load(save_dir+ '/data/dataY.npy')
             dataZ = np.load(save_dir+ '/data/dataZ.npy')
 
+            print("Dimensions of dataX are: ", dataX.shape)
+
             if(use_one_hot):
                 dataOneHots = np.load(save_dir+ '/data/dataOneHots.npy')
             else:
@@ -307,22 +313,23 @@ def main():
                 mocap_info = pickle.load(open(mocap_file,'r'))
 
                 #turn saved rollout into s
-                states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, state_representation) 
+                full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
                     #states_for_dataX: (length-1)x24 cuz ignore 1st one (no deriv)
                     #actions_for_dataY: (length-1)x2
 
                 #use s to create ds
-                states_for_dataZ = states_for_dataX[1:,:]-states_for_dataX[:-1,:]
+                states_for_dataZ = full_states_for_dataX[1:,:]-full_states_for_dataX[:-1,:]
 
                 #s,a,ds
-                dataX.append(states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
+                dataX.append(abbrev_states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
                 dataY.append(actions_for_dataY[:-1,:])
                 dataZ.append(states_for_dataZ)
 
                 #create the corresponding one_hot vector
                 curr_surface = mocap_file.split("/")[-2].split("_")[0]
                 curr_onehot= create_onehot(curr_surface, use_camera, mappings)
-                tiled_curr_onehot = np.tile(curr_onehot,(states_for_dataX.shape[0]-1,1))
+                tiled_curr_onehot = np.tile(curr_onehot,(abbrev_states_for_dataX.shape[0]-1,1))
                 dataOneHots.append(tiled_curr_onehot)
             
             #save training data
@@ -354,14 +361,17 @@ def main():
                 mocap_info = pickle.load(open(mocap_file,'r'))
 
                 #turn saved rollout into s
-                states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, state_representation)
-                states_val.append(states_for_dataX)
+                full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
+                states_val.append(abbrev_states_for_dataX)
                 controls_val.append(actions_for_dataY)
+
+                # Is this data just unlabeled or something????? Why?
 
                 #create the corresponding one_hot vector
                 curr_surface = mocap_file.split("/")[-2].split("_")[0]
                 curr_onehot= create_onehot(curr_surface, use_camera, mappings)
-                tiled_curr_onehot = np.tile(curr_onehot,(states_for_dataX.shape[0],1))
+                tiled_curr_onehot = np.tile(curr_onehot,(abbrev_states_for_dataX.shape[0],1))
                 onehots_val.append(tiled_curr_onehot)
 
             #save validation data
@@ -373,7 +383,9 @@ def main():
             np.save(save_dir+ '/data/onehots_val.npy', onehots_val)
 
             #set aside un-preprocessed data, to use later for forward sim
-            forwardsim_x_true = states_for_dataX[4:16] #use these steps from the last validation rollout
+            print("inside traindynamics, the dimensions of full state are: ", full_states_for_dataX.shape)
+            forwardsim_x_true = full_states_for_dataX[4:16] #use these steps from the last validation rollout
+            print(forwardsim_x_true.shape)
             forwardsim_y = actions_for_dataY[4:16] #use these steps from the last validation rollout
             forwardsim_onehot = tiled_curr_onehot[4:16] #use these steps from the last validation rollout
 
@@ -462,6 +474,7 @@ def main():
         print("dataX dim: ", dataX.shape)
 
         if(playback_mode):
+            print("making playback controller")
             controller = ControllerPlayback(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
                                 left_min, left_max, right_min, right_max, 
                                 use_pid_mode=use_pid_mode,
@@ -540,6 +553,9 @@ def main():
                 saver = tf.train.Saver(max_to_keep=0)
             save_path = saver.save(sess, save_dir+ '/models/model_aggIter' +str(counter)+ '.ckpt')
             print("Model saved at ", save_path)
+
+            #Just train for x, y right now
+            #return
 
             #####################################
             ## Validation Metrics
@@ -665,21 +681,21 @@ def main():
             #np.save(save_dir + '/saved_trajfollow/pred_iter' + str(counter) +'.npy', np.array(resulting_multiple_x))
             
             ### aggregate rollouts into training set
-            x_array = np.array(resulting_multiple_x)[0:(rollouts_forTraining+1)] ########the +!???
-            u_array = np.array(selected_multiple_u)[0:(rollouts_forTraining+1)] #rollouts x steps x acsize
-            for i in range(rollouts_forTraining):
+            # x_array = np.array(resulting_multiple_x)[0:(rollouts_forTraining+1)] ########the +!???
+            # u_array = np.array(selected_multiple_u)[0:(rollouts_forTraining+1)] #rollouts x steps x acsize
+            # for i in range(rollouts_forTraining):
                 
-                x= x_array[i] #[N+1, NN_inp]
-                u= u_array[i][:-1,:] #[N, actionSize]
+            #     x= x_array[i] #[N+1, NN_inp]
+            #     u= u_array[i][:-1,:] #[N, actionSize]
                 
-                newDataX= np.copy(x[0:-1, :])
-                newDataY= np.copy(u)
-                newDataZ= np.copy(x[1:, :]-x[0:-1, :])
+            #     newDataX= np.copy(x[0:-1, :])
+            #     newDataY= np.copy(u)
+            #     newDataZ= np.copy(x[1:, :]-x[0:-1, :])
 
-                # the actual aggregation
-                dataX_new = np.concatenate((dataX_new, newDataX))
-                dataY_new = np.concatenate((dataY_new, newDataY))
-                dataZ_new = np.concatenate((dataZ_new, newDataZ))
+            #     # the actual aggregation
+            #     dataX_new = np.concatenate((dataX_new, newDataX))
+            #     dataY_new = np.concatenate((dataY_new, newDataY))
+            #     dataZ_new = np.concatenate((dataZ_new, newDataZ))
 
             #####################################
             ## Bookkeeping
@@ -690,6 +706,7 @@ def main():
             print("Time taken: {:0.2f} s\n\n".format(time.time()-starting_big_loop))
             counter= counter+1
 
+        print("killing robot")
         controller.kill_robot()
         return
 

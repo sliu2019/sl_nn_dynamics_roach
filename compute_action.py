@@ -42,7 +42,7 @@ class Actions(object):
       self.visualize_rviz = visualize_rviz
 
 
-    def compute_optimal_action(self,curr_state, desired_states, left_min, left_max, right_min, right_max, currently_executing_action, step, dyn_model, N, horizon, dt_steps, x_index, y_index, yaw_cos_index, yaw_sin_index, mean_x, mean_y, mean_z, std_x, std_y, std_z, publish_markers_desired, publish_markers, curr_line_segment, horiz_penalty_factor, backward_discouragement, heading_penalty_factor, old_curr_forward):
+    def compute_optimal_action(self,full_curr_state, abbrev_curr_state, desired_states, left_min, left_max, right_min, right_max, currently_executing_action, step, dyn_model, N, horizon, dt_steps, x_index, y_index, yaw_cos_index, yaw_sin_index, mean_x, mean_y, mean_z, std_x, std_y, std_z, publish_markers_desired, publish_markers, curr_line_segment, horiz_penalty_factor, backward_discouragement, heading_penalty_factor, old_curr_forward):
 
       #check if curr point in closest to curr_line_segment or if it moved on to next one
       curr_start = desired_states[curr_line_segment]
@@ -51,8 +51,8 @@ class Actions(object):
       next_end = desired_states[curr_line_segment+2]
       ############ closest distance from point to current line segment
       #vars
-      a = curr_state[x_index]- curr_start[0]
-      b = curr_state[y_index]- curr_start[1]
+      a = full_curr_state[x_index]- curr_start[0]
+      b = full_curr_state[y_index]- curr_start[1]
       c = curr_end[0]- curr_start[0]
       d = curr_end[1]- curr_start[1]
       #project point onto line segment
@@ -68,13 +68,13 @@ class Actions(object):
         closest_pt_x= curr_start[0] + np.multiply(which_line_section,c)
         closest_pt_y= curr_start[1] + np.multiply(which_line_section,d)
       #min dist from pt to that closest point (ie closes dist from pt to line segment)
-      min_perp_dist = np.sqrt((curr_state[x_index]-closest_pt_x)*(curr_state[x_index]-closest_pt_x) + (curr_state[y_index]-closest_pt_y)*(curr_state[y_index]-closest_pt_y))
+      min_perp_dist = np.sqrt((full_curr_state[x_index]-closest_pt_x)*(full_curr_state[x_index]-closest_pt_x) + (full_curr_state[y_index]-closest_pt_y)*(full_curr_state[y_index]-closest_pt_y))
       #"forward-ness" of the pt... for each sim
       curr_forward = which_line_section
       ############ closest distance from point to next line segment
       #vars
-      a = curr_state[x_index]- next_start[0]
-      b = curr_state[y_index]- next_start[1]
+      a = full_curr_state[x_index]- next_start[0]
+      b = full_curr_state[y_index]- next_start[1]
       c = next_end[0]- next_start[0]
       d = next_end[1]- next_start[1]
       #project point onto line segment
@@ -90,7 +90,7 @@ class Actions(object):
         closest_pt_x= next_start[0] + np.multiply(which_line_section,c)
         closest_pt_y= next_start[1] + np.multiply(which_line_section,d)
       #min dist from pt to that closest point (ie closes dist from pt to line segment)
-      dist = np.sqrt((curr_state[x_index]-closest_pt_x)*(curr_state[x_index]-closest_pt_x) + (curr_state[y_index]-closest_pt_y)*(curr_state[y_index]-closest_pt_y))
+      dist = np.sqrt((full_curr_state[x_index]-closest_pt_x)*(full_curr_state[x_index]-closest_pt_x) + (full_curr_state[y_index]-closest_pt_y)*(full_curr_state[y_index]-closest_pt_y))
       #pick which line segment it's closest to, and update vars accordingly
       moved_to_next = False
       if(dist<min_perp_dist):
@@ -103,7 +103,7 @@ class Actions(object):
       curr_start = desired_states[curr_line_segment]
       curr_end = desired_states[curr_line_segment+1]
       desired_yaw = np.arctan2(curr_end[1]-curr_start[1], curr_end[0]-curr_start[0])
-      curr_yaw = np.arctan2(curr_state[yaw_sin_index],curr_state[yaw_cos_index])
+      curr_yaw = np.arctan2(full_curr_state[yaw_sin_index],full_curr_state[yaw_cos_index])
 
       save_perp_dist = np.copy(min_perp_dist)
       save_forward_dist = np.copy(curr_forward)
@@ -135,8 +135,9 @@ class Actions(object):
 
       #run forward sim to predict possible trajectories
       many_in_parallel=True
-      resulting_states = dyn_model.do_forward_sim([curr_state,0], np.copy(all_samples), None, many_in_parallel, None, None)
+      resulting_states = dyn_model.do_forward_sim([full_curr_state,0], np.copy(all_samples), None, many_in_parallel, None, None)
       resulting_states= np.array(resulting_states) #this is [horizon+1, N, statesize]
+      #print("shape of resulting_states: ", resulting_states.shape)
 
       #evaluate the trajectories
       scores=np.zeros((N,))
@@ -286,21 +287,24 @@ class Actions(object):
         best_sequence_of_states= resulting_states[:,best_sim_number,:] # (h+1)x(stateSize)
         markerArray = MarkerArray()
         marker_id=0
+
+        #print("rviz red dot state shape: ", best_sequence_of_states[0, :].shape)
         for marker_num in range(resulting_states.shape[0]):
           marker = Marker()
           marker.id=marker_id
           marker.header.frame_id = "/world"
           marker.type = marker.SPHERE
           marker.action = marker.ADD
-          marker.scale.x = 0.1
-          marker.scale.y = 0.1
-          marker.scale.z = 0.1
+          marker.scale.x = 0.05
+          marker.scale.y = 0.05
+          marker.scale.z = 0.05
           marker.color.a = 1.0
           marker.color.r = 1.0
           marker.color.g = 0.0
           marker.color.b = 0.0
           marker.pose.position.x = best_sequence_of_states[marker_num,0]
           marker.pose.position.y = best_sequence_of_states[marker_num,1]
+          #print("rviz detects current roach pose to be: ", best_sequence_of_states[marker_num, :2])
           marker.pose.position.z = 0
           markerArray.markers.append(marker)
           marker_id+=1
