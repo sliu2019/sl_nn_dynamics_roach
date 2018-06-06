@@ -6,6 +6,7 @@ from collections import OrderedDict
 import math
 import copy
 import tensorflow as tf
+import IPython
 
 def setup_roach(serial_port, baud_rate, DEFAULT_ADDRS, use_pid_mode, top):
 
@@ -64,6 +65,7 @@ def stop_fans(lock, robot):
 
 
 def start_roach(xb, lock, robots, use_pid_mode):
+	print("starting roach")
 
 	#set thrust for both motors to 0
 	lock.acquire()
@@ -78,38 +80,62 @@ def start_roach(xb, lock, robots, use_pid_mode):
 	return
 
 def stop_roach(lock, robots, use_pid_mode):
-
 	#set thrust for both motors to 0
 	lock.acquire()
 	for robot in robots:
 		if(use_pid_mode):
 			robot.setVelGetTelem(0,0)
-			#robot.PIDStopMotors()
-			#robot.running = False
+			# robot.PIDStopMotors()
+			# robot.running = False
 		else:
 			robot.setThrustGetTelem(0, 0)
 			#robot.downloadTelemetry() 
 	lock.release()
+	#IPython.embed()
 	return
 
 def stop_and_exit_roach(xb, lock, robots, use_pid_mode):
-
 	#set thrust for both motors to 0
 	lock.acquire()
 	for robot in robots:
 		if(use_pid_mode):
 			#robot.setVelGetTelem(0,0)
+			#print("before stoping motors")
+			#IPython.embed()
 			robot.PIDStopMotors()
 			robot.running = False
+			#IPython.embed()
 		else:
 			robot.setThrustGetTelem(0, 0) 
 			### robot.downloadTelemetry()
 	lock.release()
 
+	#IPython.embed()
 	#exit RoachBridge
 	xb_safe_exit(xb)
 	return
+	
+def stop_and_exit_roach_special(xb, lock, robots, use_pid_mode):
+	# Same as above, except calling xb_safe_exitCollect prevents sys.exit(1) from occurring at end
+	#set thrust for both motors to 0
+	lock.acquire()
+	for robot in robots:
+		if(use_pid_mode):
+			#robot.setVelGetTelem(0,0)
+			#print("before stoping motors")
+			#IPython.embed()
+			robot.PIDStopMotors()
+			robot.running = False
+			#IPython.embed()
+		else:
+			robot.setThrustGetTelem(0, 0) 
+			### robot.downloadTelemetry()
+	lock.release()
 
+	#IPython.embed()
+	#exit RoachBridge
+	xb_safe_exitCollect(xb)
+	return
 def quat_to_eulerDegrees(orientation):
   x=orientation.x
   y=orientation.y

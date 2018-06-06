@@ -1,0 +1,2 @@
+model_checkpoint_path: "/home/anagabandi/roach_workspace/src/liu_nn_dynamics_roach/nn_dynamics_roach/scripts/kh_models/camera_no_xy.ckpt"
+all_model_checkpoint_paths: "/home/anagabandi/roach_workspace/src/liu_nn_dynamics_roach/nn_dynamics_roach/scripts/kh_models/camera_no_xy.ckpt"

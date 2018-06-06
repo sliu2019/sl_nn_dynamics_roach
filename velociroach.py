@@ -12,7 +12,7 @@ from struct import pack,unpack
 from xbee import XBee
 from math import ceil,floor
 import numpy as np
-
+import IPython
 # TODO: check with firmware if this value is actually correct
 PHASE_180_DEG = 0x8000
 
@@ -418,16 +418,19 @@ def setupSerial(COMPORT , BAUDRATE , timeout = 3, rtscts = 0):
     
     
 def xb_safe_exit(xb):
+    #IPython.embed()
     print "Halting xb"
     if xb is not None:
         xb.halt()
         
+    #IPython.embed()
     print "Closing serial"
     if xb.serial is not None:
         xb.serial.close()
         
     print "Exiting..."
     sys.exit(1)
+    
 def xb_safe_exitCollect(xb):
     print "Halting xb"
     if xb is not None:

@@ -131,11 +131,19 @@ class Controller(object):
 
       self.setup()
 
+    # Some setters
+    def set_N(self, new_N):
+      self.N = new_N
+
+    def set_horizon(self, new_horizon):
+      self.horizon = new_horizon
+
     def setup(self):
 
       #init node
       rospy.init_node('controller_node', anonymous=True)
-      #print("made controller node")
+      
+      # rospy.Rate helps keep the frequency of a loop at a fixed value with the help of the sleep function, called at the end of loops
       self.rate = rospy.Rate(self.frequency_value)
 
       #setup serial, roach bridge, and imu queues
@@ -173,6 +181,10 @@ class Controller(object):
     def kill_robot(self):
       stop_and_exit_roach(self.xb, self.lock, self.robots, self.use_pid_mode)
 
+    def kill_robot_special(self):
+      # Prevents sys.exit(1) from being called at end
+      stop_and_exit_roach_special(self.xb, self.lock, self.robots, self.use_pid_mode)
+
     def run(self,num_steps_for_rollout, aggregation_loop_counter, dyn_model):
 
       #init values for the loop below
@@ -193,7 +205,10 @@ class Controller(object):
       list_robot_info=[]
       list_mocap_info=[]
 
-      while(True):
+      command_frequency = 0
+      time_compute_action = 0
+      number_compute_action = 0
+      while True:
 
         if(step%10==0):
           print "     step #: ", step
@@ -208,6 +223,12 @@ class Controller(object):
           send_action = np.copy(optimal_action)
           print "\nsent action: ", send_action[0], send_action[1]
           if(self.use_pid_mode):
+            if step == 0:
+              time_of_last_command = time.time()
+            else:
+              time_of_current_command = time.time()
+              command_frequency += (time_of_current_command - time_of_last_command)
+              time_of_last_command = time_of_current_command
             robot.setVelGetTelem(send_action[0], send_action[1])
           else:
             robot.setThrustGetTelem(send_action[0], send_action[1])
@@ -218,7 +239,14 @@ class Controller(object):
         ########################
 
         got_data=False
+        start_time = time.time()
         while(got_data==False):
+          if (time.time() - start_time)%5 == 0:
+            print("Controller is waiting to receive data from robot")
+          if (time.time() - start_time) > 10:
+            # Unsuccessful run; roach stopped communicating with xbee
+            stop_roach(self.lock, self.robots, self.use_pid_mode)
+            return None, None, None
           for q in shared.imu_queues.values():
             #while loop, because sometimes, you get multiple things from robot
             #but they're all same, so just use the last one
@@ -273,7 +301,9 @@ class Controller(object):
 
           #stop roach
           stop_roach(self.lock, self.robots, self.use_pid_mode)
-          
+          # print("after calling stop_roach")
+          # IPython.embed()
+
           #save for playback debugging
           robot_file= self.save_dir +'/'+ self.traj_save_path +'/robot_info.obj'
           mocap_file= self.save_dir +'/'+ self.traj_save_path +'/mocap_info.obj'
@@ -291,6 +321,9 @@ class Controller(object):
           np.save(self.save_dir +'/'+ self.traj_save_path +'/desheading.npy', self.save_desired_heading)
           np.save(self.save_dir +'/'+ self.traj_save_path +'/currheading.npy', self.save_curr_heading)
 
+          print("Empirical time between commands (in seconds): ", command_frequency/float(num_steps_for_rollout))
+          print("Empirical time to execute compute_action for k = ", self.N, " and H = ", self.horizon, " is:", time_compute_action/float(number_compute_action))
+
           return(self.traj_taken, self.actions_taken, self.desired_states)
 
         ########################
@@ -305,6 +338,8 @@ class Controller(object):
 
         if(step%self.dt_steps == 0):
           self.traj_taken.append(full_curr_state)
+
+          time_before = time.time()
           optimal_action, curr_line_segment, old_curr_forward, \
               save_perp_dist, save_forward_dist, saved_old_forward_dist, \
               save_moved_to_next, save_desired_heading, save_curr_heading = self.a.compute_optimal_action(np.copy(full_curr_state), np.copy(abbrev_curr_state), self.desired_states, \
@@ -317,6 +352,9 @@ class Controller(object):
                                                                                                           self.publish_markers, self.curr_line_segment, \
                                                                                                           self.horiz_penalty_factor, self.backward_discouragement, \
                                                                                                           self.heading_penalty_factor, self.old_curr_forward)
+          time_compute_action += time.time() - time_before
+          number_compute_action += 1
+
           self.curr_line_segment = np.copy(curr_line_segment)
           self.old_curr_forward = np.copy(old_curr_forward)
 
@@ -334,3 +372,4 @@ class Controller(object):
         #print("computed action")
         self.rate.sleep()
         step+=1
+

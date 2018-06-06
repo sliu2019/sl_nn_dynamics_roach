@@ -35,11 +35,12 @@ class Dyn_Model:
         self.use_one_hot = use_one_hot
         self.one_hot_dims=one_hot_dims
 
+        self.curr_env_onehot = curr_env_onehot
         #set curr_env_onehot
-        if(self.use_one_hot):
-            self.curr_env_onehot = np.tile(curr_env_onehot, (N,1))
-        else:
-            self.curr_env_onehot= np.ones((1,self.one_hot_dims))
+        # if(self.use_one_hot):
+        #     self.curr_env_onehot = np.tile(curr_env_onehot, (N,1))
+        # else:
+        #     self.curr_env_onehot= np.ones((1,self.one_hot_dims))
 
         #placeholders
         self.x_ = tf.placeholder(tf_datatype, shape=[None, self.inputSize], name='x') #inputs
@@ -253,6 +254,12 @@ class Dyn_Model:
         if(many_in_parallel):
             #init vars
             N= forwardsim_y.shape[0]
+            
+            if(self.use_one_hot):
+                self.tiled_curr_env_onehot = np.tile(self.curr_env_onehot, (N,1))
+            else:
+                self.tiled_curr_env_onehot= np.ones((1,self.one_hot_dims))
+            
             horizon = forwardsim_y.shape[1]
             array_stdz = np.tile(np.expand_dims(self.std_z, axis=0),(N,1))
             array_meanz = np.tile(np.expand_dims(self.mean_z, axis=0),(N,1))
@@ -282,7 +289,7 @@ class Dyn_Model:
                 inputs_list= np.concatenate((states_preprocessed, actions_preprocessed), axis=1)
 
                 #run the N sims all at once
-                model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_onehots: self.curr_env_onehot}) 
+                model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_onehots: self.tiled_curr_env_onehot}) 
                 state_differences = np.multiply(model_output[0],array_stdz)+array_meanz
 
                 #update the state info

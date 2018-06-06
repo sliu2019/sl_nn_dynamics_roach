@@ -44,7 +44,7 @@ def main():
 
     # Which trajectory, saving filenames
     run_num= 1                                         #directory for saving everything
-    desired_shape_for_traj = "left"                     #straight, left, right, circle_left, zigzag, figure8
+    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
     save_run_num = 0
     traj_save_path= desired_shape_for_traj + str(save_run_num)     #directory name inside run_num directory
 
@@ -88,7 +88,7 @@ def main():
     slow_pid_mode = True
 
     #xbee connection port
-    serial_port = '/dev/ttyUSB0'
+    serial_port = '/dev/ttyUSB1'
 
     #controller
     visualize_rviz=True   #turning this off could make things go faster
@@ -528,6 +528,7 @@ def main():
                 else:
                     saver = tf.train.Saver()
                     saver.restore(sess, restore_dynamics_model_filepath)
+                    
 
             #how good is model on training data
             training_loss_list.append(training_loss)

@@ -119,7 +119,7 @@ class Actions(object):
       #randomly sample actions to try (the 1st step for each is going to be the currently executing action)
       all_samples = npr.uniform([left_min, right_min], [left_max, right_max], (N, horizon+1, 2))
 
-      #repeat acs for dt_steps each
+      #repeat actions for dt_steps each
       for temp in range(all_samples.shape[1]):
         if(temp%dt_steps==0):
           temp_counter=0
