@@ -1,4 +1,6 @@
 run_*
+!run_kh_test.py
+!run_kh_test2.py
 camera_debugging
 videos
 bvlc_alexnet.npy

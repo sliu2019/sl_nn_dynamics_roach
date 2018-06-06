@@ -1,0 +1,735 @@
+
+import pprint
+import numpy as np
+import numpy.random as npr
+import tensorflow as tf
+import time
+import IPython
+import math
+import matplotlib.pyplot as plt
+import pickle
+import threading
+import multiprocessing
+import os
+import sys
+from six.moves import cPickle
+from scipy.signal import savgol_filter
+from scipy.signal import medfilt
+
+
+#add nn_dynamics_roach to sys.path
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+#my imports
+from nn_dynamics_roach.msg import velroach_msg
+from utils import *
+from dynamics_model import Dyn_Model
+from controller_class import Controller
+from controller_class_playback import ControllerPlayback
+###################from myalexnet_forward import returnPictureEncoding
+
+
+#datatypes
+tf_datatype= tf.float32
+np_datatype= np.float32
+
+mappings = np.load("images.npy")
+
+def run_roach(K, H):
+
+    ##################################
+    ######### SPECIFY VARS ###########
+    ##################################
+
+    # Which trajectory, saving filenames
+    run_num= 1                                         #directory for saving everything
+    desired_shape_for_traj = "straight"                     #straight, left, right, circle_left, zigzag, figure8
+    save_run_num = 0
+    traj_save_path= desired_shape_for_traj + str(save_run_num)     #directory name inside run_num directory
+
+    #######TRAINING########## 
+    train_now = False
+
+    # train_now = False: which saved model to potentially load from
+    model_name = 'camera_no_xy'     #onehot_smaller, combined, camera
+    
+    # train_now = True: select training data
+    use_existing_data = True #Basically, if true, use pre-processed data; false, re-pre-process the data specified below
+    # use_existing_data = true. Specify task between: 'carpet','styrofoam', 'gravel', 'turf', 'all'
+    task_type=['all']                 
+    months = ['01','02']
+    data_path = os.path.abspath(os.path.join(os.getcwd(), "../data_collection/"))
+
+    # Doesn't use_one_hot have to be the negation of use_camera? If so, why are there 2 variables?
+    # Use one hot is if you're going to have a conditioned NN or not; use camera is if it's going to be 1-hot or camera
+    use_one_hot= True #True
+    use_camera = True #True
+    #Cheating method: what you do when no camera live-feed
+    curr_env_onehot = create_onehot('carpet', use_camera, mappings)
+
+    # training/validation split
+    training_ratio = 0.9
+
+    nEpoch_initial = 50
+    nEpoch = 20
+    state_representation = "exclude_x_y" #["exclude_x_y", "all"]
+    num_fc_layers = 2
+    depth_fc_layers = 500
+    batchsize = 1000
+    lr = 0.001
+
+    ###########TESTING############
+    #which setting to run in
+
+
+    #PID (velocity) vs PWM (thrust)
+    use_pid_mode = True      
+    slow_pid_mode = True
+
+    #xbee connection port
+    serial_port = '/dev/ttyUSB1'
+
+    #controller
+    visualize_rviz=True   #turning this off could make things go faster
+    if(use_one_hot):
+        #N=400
+        N = K
+    else:
+        N=500
+    #horizon = 5 #4
+    horizon = H
+    frequency_value=10
+    playback_mode = False
+
+    #length of controller run
+    #num_steps_per_controller_run=50
+    if(desired_shape_for_traj=='straight'):
+        num_steps_per_controller_run=80
+        if (task_type==['gravel']):
+            num_steps_per_controller_run=85
+    elif(desired_shape_for_traj=='left'):
+        num_steps_per_controller_run= 160
+        if(task_type==['turf']):
+            num_steps_per_controller_run=110
+    elif(desired_shape_for_traj=='right'):
+        num_steps_per_controller_run= 150
+        if ('gravel' in task_type):
+            num_steps_per_controller_run=130
+    elif(desired_shape_for_traj=='zigzag'):
+        num_steps_per_controller_run=160
+        if(task_type==['turf']):
+            num_steps_per_controller_run=210
+    else:
+        num_steps_per_controller_run=0
+
+
+    ##############################################
+    ##### DONT NEED TO MESS WITH THIS PART #######
+    ##############################################
+
+    #aggregation
+    fraction_use_new = 0.5
+    num_aggregation_iters = 1
+    num_trajectories_for_aggregation= 1
+    rollouts_forTraining = num_trajectories_for_aggregation
+
+    baud_rate = 57600
+    DEFAULT_ADDRS = ['\x00\x01']
+
+    one_hot_dims=4
+    if(use_camera):
+        one_hot_dims=6
+
+    #read in the training data
+    path_lst = []
+    for subdir, dirs, files in os.walk(data_path):
+        lst = subdir.split("/")[-1].split("_")
+        if len(lst) >= 3:
+            surface = lst[0]
+            month = lst[2]
+            if ((surface in task_type or "all" in task_type) and month in months):
+                for file in files:
+                    path_lst.append(os.path.join(subdir, file))
+    path_lst.sort()
+    print "num of rollouts: ", len(path_lst)/2
+    training_rollouts = int(len(path_lst)*training_ratio)
+    if training_rollouts%2 != 0:
+        training_rollouts -= 1
+    validation_rollouts = len(path_lst) - training_rollouts
+
+    ##################################
+    ######### MOTOR LIMITS ###########
+    ##################################
+
+    #set min and max
+    left_min = 1200
+    right_min = 1200
+    left_max = 2000
+    right_max = 2000
+
+    if(use_pid_mode):
+      if(slow_pid_mode):
+        left_min = 2*math.pow(2,16)*0.001
+        right_min = 2*math.pow(2,16)*0.001
+        left_max = 9*math.pow(2,16)*0.001
+        right_max = 9*math.pow(2,16)*0.001
+      else: #this hasnt been tested yet
+        left_min = 4*math.pow(2,16)*0.001
+        right_min = 4*math.pow(2,16)*0.001
+        left_max = 12*math.pow(2,16)*0.001
+        right_max = 12*math.pow(2,16)*0.001
+    
+    ##################################
+    ######### LOG DIRECTORY ##########
+    ##################################
+
+    #directory from which to get training data
+    # data_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + filename_trainingdata
+
+    #directories for saving data
+    save_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/run_'+ str(run_num)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+        os.makedirs(save_dir+'/losses')
+        os.makedirs(save_dir+'/models')
+        os.makedirs(save_dir+'/data')
+        os.makedirs(save_dir+'/saved_forwardsim')
+        os.makedirs(save_dir+'/saved_trajfollow')
+        os.makedirs(save_dir+'/'+traj_save_path)
+    if not os.path.exists(save_dir+'/'+traj_save_path):
+        os.makedirs(save_dir+'/'+traj_save_path)
+
+
+    #return
+
+    ###############restore_dynamics_model_filepath = save_dir+ '/models/model_aggIter0.ckpt'
+    restore_dynamics_model_filepath = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/saved_models/'+str(model_name)+'/model_aggIter0.ckpt'
+    if(train_now==False):
+        print("restoring dynamics model from: ", restore_dynamics_model_filepath) 
+
+    ##############################
+    ### init vars 
+    ##############################
+
+    visualize_True = True
+    visualize_False = False
+    noise_True = True
+    noise_False = False
+    dt_steps= 1
+    x_index=0
+    y_index=1
+    z_index=2
+
+    make_aggregated_dataset_noisy = True
+    make_training_dataset_noisy = True
+    perform_forwardsim_for_vis= True
+    print_minimal=False
+
+    noiseToSignal = 0
+    if(make_training_dataset_noisy):
+        noiseToSignal = 0.01
+
+    # num_rollouts_val = len(validation_rollouts)
+    num_rollouts_val = validation_rollouts
+
+
+    #################################################
+    ### save a file of param values to the run directory
+    #################################################
+
+    '''param_file = open(save_dir + '/params.txt', "w")
+    param_file.write("\ntrain_separate_nns = " + str(train_separate_nns))
+    param_file.close()'''
+
+    #################################################
+    ### set GPU options for TF
+    #################################################
+
+    gpu_device = 0
+    gpu_frac = 0.3
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_device)
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_frac)
+    config = tf.ConfigProto(gpu_options=gpu_options,
+                            log_device_placement=False,
+                            allow_soft_placement=True,
+                            inter_op_parallelism_threads=1,
+                            intra_op_parallelism_threads=1)
+
+    with tf.Session(config=config) as sess:
+
+        #################################################
+        ### read in training dataset
+        #################################################
+
+        if(use_existing_data):
+            #training data
+            dataX = np.load(save_dir+ '/data/dataX.npy')
+            dataY = np.load(save_dir+ '/data/dataY.npy')
+            dataZ = np.load(save_dir+ '/data/dataZ.npy')
+
+            print("Dimensions of dataX are: ", dataX.shape)
+
+            if(use_one_hot):
+                dataOneHots = np.load(save_dir+ '/data/dataOneHots.npy')
+            else:
+                dataOneHots=0
+
+            #validation data
+            states_val = np.load(save_dir+ '/data/states_val.npy')
+            controls_val = np.load(save_dir+ '/data/controls_val.npy')
+
+            if(use_one_hot):
+                onehots_val = np.load(save_dir+ '/data/onehots_val.npy')
+            else:
+                onehots_val=0
+
+            #data saved for forward sim
+            forwardsim_x_true = np.load(save_dir+ '/data/forwardsim_x_true.npy')
+            forwardsim_y = np.load(save_dir+ '/data/forwardsim_y.npy')
+
+            if(use_one_hot):
+                forwardsim_onehot = np.load(save_dir+ '/data/forwardsim_onehot.npy')
+            else:
+                forwardsim_onehot=0
+
+        else:
+
+            ######################################
+            ############ TRAINING DATA ###########
+            ######################################
+
+            dataX=[]
+            dataY=[]
+            dataZ=[]
+            dataOneHots=[]
+            # for rollout_counter in training_rollouts:
+            for i in range(training_rollouts/2):
+
+                #read in data from 1 rollout
+                # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                mocap_file = path_lst[2*i]
+                robot_file = path_lst[2*i+1]
+                robot_info = pickle.load(open(robot_file,'r'))
+                mocap_info = pickle.load(open(mocap_file,'r'))
+
+                #turn saved rollout into s
+                full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
+                    #states_for_dataX: (length-1)x24 cuz ignore 1st one (no deriv)
+                    #actions_for_dataY: (length-1)x2
+
+                #use s to create ds
+                states_for_dataZ = full_states_for_dataX[1:,:]-full_states_for_dataX[:-1,:]
+
+                #s,a,ds
+                dataX.append(abbrev_states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
+                dataY.append(actions_for_dataY[:-1,:])
+                dataZ.append(states_for_dataZ)
+
+                #create the corresponding one_hot vector
+                curr_surface = mocap_file.split("/")[-2].split("_")[0]
+                curr_onehot= create_onehot(curr_surface, use_camera, mappings)
+                tiled_curr_onehot = np.tile(curr_onehot,(abbrev_states_for_dataX.shape[0]-1,1))
+                dataOneHots.append(tiled_curr_onehot)
+            
+            #save training data
+            dataX=np.concatenate(dataX)
+            dataY=np.concatenate(dataY)
+            dataZ=np.concatenate(dataZ)
+            dataOneHots=np.concatenate(dataOneHots)
+            np.save(save_dir+ '/data/dataX.npy', dataX)
+            np.save(save_dir+'/data/dataY.npy', dataY)
+            np.save(save_dir+ '/data/dataZ.npy', dataZ)
+            np.save(save_dir+ '/data/dataOneHots.npy', dataOneHots)
+
+            ######################################
+            ########## VALIDATION DATA ###########
+            ######################################
+
+            states_val = []
+            controls_val = []
+            onehots_val = []
+            # for rollout_counter in validation_rollouts:
+            for i in range(validation_rollouts/2):
+
+                #read in data from 1 rollout
+                # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                mocap_file = path_lst[training_rollouts + 2*i]
+                robot_file = path_lst[training_rollouts + 2*i+1]
+                robot_info = pickle.load(open(robot_file,'r'))
+                mocap_info = pickle.load(open(mocap_file,'r'))
+
+                #turn saved rollout into s
+                full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
+                states_val.append(abbrev_states_for_dataX)
+                controls_val.append(actions_for_dataY)
+
+                # Is this data just unlabeled or something????? Why?
+
+                #create the corresponding one_hot vector
+                curr_surface = mocap_file.split("/")[-2].split("_")[0]
+                curr_onehot= create_onehot(curr_surface, use_camera, mappings)
+                tiled_curr_onehot = np.tile(curr_onehot,(abbrev_states_for_dataX.shape[0],1))
+                onehots_val.append(tiled_curr_onehot)
+
+            #save validation data
+            states_val = np.array(states_val)
+            controls_val = np.array(controls_val)
+            onehots_val = np.array(onehots_val)
+            np.save(save_dir+ '/data/states_val.npy', states_val)
+            np.save(save_dir+ '/data/controls_val.npy', controls_val)
+            np.save(save_dir+ '/data/onehots_val.npy', onehots_val)
+
+            #set aside un-preprocessed data, to use later for forward sim
+            print("inside traindynamics, the dimensions of full state are: ", full_states_for_dataX.shape)
+            forwardsim_x_true = full_states_for_dataX[4:16] #use these steps from the last validation rollout
+            print(forwardsim_x_true.shape)
+            forwardsim_y = actions_for_dataY[4:16] #use these steps from the last validation rollout
+            forwardsim_onehot = tiled_curr_onehot[4:16] #use these steps from the last validation rollout
+
+            np.save(save_dir+ '/data/forwardsim_x_true.npy', forwardsim_x_true)
+            np.save(save_dir+ '/data/forwardsim_y.npy', forwardsim_y)
+            np.save(save_dir+ '/data/forwardsim_onehot.npy', forwardsim_onehot)
+
+        #################################################
+        ### preprocess the old training dataset
+        #################################################
+
+        print("\n#####################################")
+        print("Preprocessing 'old' training data")
+        print("#####################################\n")
+        #every component (i.e. x position) will now be mean 0, std 1
+
+        mean_x = np.mean(dataX, axis = 0)
+        dataX = dataX - mean_x
+        std_x = np.std(dataX, axis = 0)
+        dataX = np.nan_to_num(dataX/std_x)
+
+        mean_y = np.mean(dataY, axis = 0) 
+        dataY = dataY - mean_y
+        std_y = np.std(dataY, axis = 0)
+        dataY = np.nan_to_num(dataY/std_y)
+
+        mean_z = np.mean(dataZ, axis = 0) 
+        dataZ = dataZ - mean_z
+        std_z = np.std(dataZ, axis = 0)
+        dataZ = np.nan_to_num(dataZ/std_z)
+
+        #save mean and std to files for controller to use
+        np.save(save_dir+ '/data/mean_x.npy', mean_x)
+        np.save(save_dir+ '/data/mean_y.npy', mean_y)
+        np.save(save_dir+ '/data/mean_z.npy', mean_z)
+        np.save(save_dir+ '/data/std_x.npy', std_x)
+        np.save(save_dir+ '/data/std_y.npy', std_y)
+        np.save(save_dir+ '/data/std_z.npy', std_z)
+
+        ## concatenate state and action, to be used for training dynamics
+        inputs = np.concatenate((dataX, dataY), axis=1)
+        outputs = np.copy(dataZ)
+        onehots = np.copy(dataOneHots)
+
+        #dimensions
+        assert inputs.shape[0] == outputs.shape[0]
+        numData = inputs.shape[0]
+        inputSize = inputs.shape[1]
+        outputSize = outputs.shape[1]
+
+        ##############################################
+        ########### THE DYNAMICS MODEL ###############
+        ##############################################
+    
+        #which model
+        if(use_one_hot):
+            if(use_camera):
+                from feedforward_network_camera import feedforward_network
+            else:
+                from feedforward_network_one_hot import feedforward_network
+        else:
+            from feedforward_network import feedforward_network
+
+        #initialize model
+        dyn_model = Dyn_Model(inputSize, outputSize, sess, lr, batchsize, 0, x_index, y_index, 
+                            num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, 
+                            std_x, std_y, std_z, tf_datatype, np_datatype, print_minimal, feedforward_network, 
+                            use_one_hot, curr_env_onehot, N,one_hot_dims=one_hot_dims)
+
+        #randomly initialize all vars
+        sess.run(tf.initialize_all_variables())  ##sess.run(tf.global_variables_initializer()) 
+
+        ##############################################
+        ########## THE AGGREGATION LOOP ##############
+        ##############################################
+
+        '''TO DO: havent done one-hots for aggregation'''
+
+        counter=0
+        training_loss_list=[]
+        old_loss_list=[]
+        new_loss_list=[]
+        dataX_new = np.zeros((0,dataX.shape[1]))
+        dataY_new = np.zeros((0,dataY.shape[1]))
+        dataZ_new = np.zeros((0,dataZ.shape[1]))
+        print("dataX dim: ", dataX.shape)
+
+        if(playback_mode):
+            print("making playback controller")
+            controller = ControllerPlayback(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
+                                left_min, left_max, right_min, right_max, 
+                                use_pid_mode=use_pid_mode,
+                                frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
+        else:
+            controller = Controller(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
+                                left_min, left_max, right_min, right_max, 
+                                use_pid_mode=use_pid_mode,
+                                frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
+
+        while(counter<num_aggregation_iters):
+
+            print("\n#####################################")
+            print("AGGREGATION ITERATION ", counter)
+            print("#####################################\n")
+
+            starting_big_loop = time.time()
+
+            print("\n#####################################")
+            print("Preprocessing 'new' training data")
+            print("#####################################\n")
+
+            dataX_new_preprocessed = np.nan_to_num((dataX_new - mean_x)/std_x)
+            dataY_new_preprocessed = np.nan_to_num((dataY_new - mean_y)/std_y)
+            dataZ_new_preprocessed = np.nan_to_num((dataZ_new - mean_z)/std_z)
+
+            ## concatenate state and action, to be used for training dynamics
+            inputs_new = np.concatenate((dataX_new_preprocessed, dataY_new_preprocessed), axis=1)
+            outputs_new = np.copy(dataZ_new_preprocessed)
+            print("Done.")
+
+            #################################################
+            ### Train dynamics model
+            #################################################
+
+            print("\n#####################################")
+            print("Training the dynamics model")
+            print("#####################################\n")
+
+            training_loss=0
+            old_loss=0
+            new_loss=0
+
+            if(counter>0):
+                training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, onehots, inputs_new, outputs_new, nEpoch, save_dir, fraction_use_new)
+            if(counter==0):
+                if(train_now):
+                    training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, onehots, inputs_new, outputs_new, nEpoch_initial, save_dir, fraction_use_new)
+                else:
+                    saver = tf.train.Saver()
+                    saver.restore(sess, restore_dynamics_model_filepath)
+                    
+
+            #how good is model on training data
+            training_loss_list.append(training_loss)
+            #how good is model on old dataset
+            old_loss_list.append(old_loss)
+            #how good is model on new dataset
+            new_loss_list.append(new_loss)
+
+            print("\nTraining loss: ", training_loss)
+
+            #####################################
+            ## Saving training losses
+            #####################################
+
+            np.save(save_dir + '/losses/list_training_loss.npy', training_loss_list) 
+            np.save(save_dir + '/losses/list_old_loss.npy', old_loss_list)
+            np.save(save_dir + '/losses/list_new_loss.npy', new_loss_list)
+
+            #####################################
+            ## Saving model
+            #####################################
+            if(counter==0):
+                saver = tf.train.Saver(max_to_keep=0)
+            save_path = saver.save(sess, save_dir+ '/models/model_aggIter' +str(counter)+ '.ckpt')
+            print("Model saved at ", save_path)
+
+            #Just train for x, y right now
+            #return
+
+            #####################################
+            ## Run controller for a certain amount of steps
+            #####################################
+
+            selected_multiple_u = []
+            resulting_multiple_x = []
+
+            for controller_rollout_num in range(num_trajectories_for_aggregation):
+                print
+                print
+                print("PAUSING... right before a controller run... RESET THE ROBOT TO A GOOD LOCATION BEFORE CONTINUING...")
+                print
+                print
+                IPython.embed()
+                resulting_x, selected_u, desired_seq = controller.run(num_steps_for_rollout=num_steps_per_controller_run, aggregation_loop_counter=counter, dyn_model=dyn_model)
+                if resulting_x == None and selected_u == None and desired_seq == None:
+                    # Unsuccesful/incomplete rollout; robot and xbee communication issues
+                    return None
+
+                empirical_cost_of_run = compute_cost(resulting_x, desired_seq, controller.horiz_penalty_factor, controller.backward_discouragement, controller.heading_penalty_factor) 
+
+                selected_multiple_u.append(selected_u)
+                resulting_multiple_x.append(resulting_x)
+
+            #####################################
+            ## Bookkeeping
+            #####################################
+
+            print("\n\nDONE WITH BIG LOOP ITERATION ", counter ,"\n\n")
+            print("training dataset size: ", dataX.shape[0] + dataX_new.shape[0])
+            print("Time taken: {:0.2f} s\n\n".format(time.time()-starting_big_loop))
+            counter= counter+1
+
+        print("killing robot")
+        controller.kill_robot_special()
+        return empirical_cost_of_run
+
+def moving_distance(unit1, unit2):
+    phi = (unit2-unit1) % (2*np.pi)
+
+    phi[phi > np.pi] = (2*np.pi-phi)[phi > np.pi]
+
+    return phi
+
+def compute_cost(traj_taken, desired_states, horiz_penalty_factor, backward_discouragement, heading_penalty_factor):
+        # Computes the overall heuristic cost on 1 run
+        # traj_taken, as is, is a list of states. [horizon + 1, state size] 
+        #  desired_states is a list of arrays
+        x_index = 0
+        y_index = 1
+        yaw_cos_index = 10
+        yaw_sin_index = 11
+
+        traj_taken = np.array(traj_taken)
+        resulting_states = np.reshape(traj_taken, (traj_taken.shape[1], 1, traj_taken.shape[0])).T # (horizon + 1, N, state)
+        
+        N = 1
+
+        curr_line_segment = 0 #Is 0 since traj_taken is the entire trajectory from start to end, as is desired_states
+        curr_seg = np.tile(curr_line_segment,(N,))
+        curr_seg = curr_seg.astype(int)
+
+        moved_to_next = np.zeros((N,))
+        prev_forward = np.zeros((N,))
+
+        scores=np.zeros((N,))
+        
+        for pt_number in range(resulting_states.shape[0]):
+            #array of "the point"... for each sim
+            pt = resulting_states[pt_number] # N x state, all states for all N candidates at one time slice
+
+            #arrays of line segment points... for each sim
+            curr_start = desired_states[curr_seg]
+            curr_end = desired_states[curr_seg+1]
+            next_start = desired_states[curr_seg+1]
+            next_end = desired_states[curr_seg+2]
+
+            curr_start = np.reshape(curr_start, (1, curr_start.size))
+            curr_end = np.reshape(curr_end, (1, curr_end.size))
+            next_start = np.reshape(next_start, (1, next_start.size))
+            next_end = np.reshape(next_end, (1, next_end.size))
+
+            #vars... for each sim
+            min_perp_dist = np.ones((N, ))*5000
+
+            ############ closest distance from point to current line segment
+
+            #vars
+            # x = pt[:,x_index]
+            # print(type(x))
+            # print(x.shape)
+            # y = curr_start[:,0]
+            # print(type(y))
+            # print(y.shape)
+            a = pt[:,x_index]- curr_start[:,0]
+            b = pt[:,y_index]- curr_start[:,1]
+            c = curr_end[:,0]- curr_start[:,0]
+            d = curr_end[:,1]- curr_start[:,1]
+
+            #project point onto line segment
+            which_line_section = np.divide((np.multiply(a,c) + np.multiply(b,d)), (np.multiply(c,c) + np.multiply(d,d)))
+
+            #point on line segment that's closest to the pt
+            closest_pt_x = np.copy(which_line_section)
+            closest_pt_y = np.copy(which_line_section)
+            closest_pt_x[which_line_section<0] = curr_start[:,0][which_line_section<0]
+            closest_pt_y[which_line_section<0] = curr_start[:,1][which_line_section<0]
+            closest_pt_x[which_line_section>1] = curr_end[:,0][which_line_section>1]
+            closest_pt_y[which_line_section>1] = curr_end[:,1][which_line_section>1]
+            closest_pt_x[np.logical_and(which_line_section<=1, which_line_section>=0)] = (curr_start[:,0] + np.multiply(which_line_section,c))[np.logical_and(which_line_section<=1, which_line_section>=0)]
+            closest_pt_y[np.logical_and(which_line_section<=1, which_line_section>=0)] = (curr_start[:,1] + np.multiply(which_line_section,d))[np.logical_and(which_line_section<=1, which_line_section>=0)]
+
+            #min dist from pt to that closest point (ie closes dist from pt to line segment)
+            min_perp_dist = np.sqrt((pt[:,x_index]-closest_pt_x)*(pt[:,x_index]-closest_pt_x) + (pt[:,y_index]-closest_pt_y)*(pt[:,y_index]-closest_pt_y))
+
+            #"forward-ness" of the pt... for each sim
+            curr_forward = which_line_section
+
+            ############ closest distance from point to next line segment
+
+            #vars
+            a = pt[:,x_index]- next_start[:,0]
+            b = pt[:,y_index]- next_start[:,1]
+            c = next_end[:,0]- next_start[:,0]
+            d = next_end[:,1]- next_start[:,1]
+
+            #project point onto line segment
+            which_line_section = np.divide((np.multiply(a,c) + np.multiply(b,d)), (np.multiply(c,c) + np.multiply(d,d)))
+
+            #point on line segment that's closest to the pt
+            closest_pt_x = np.copy(which_line_section)
+            closest_pt_y = np.copy(which_line_section)
+            closest_pt_x[which_line_section<0] = next_start[:,0][which_line_section<0]
+            closest_pt_y[which_line_section<0] = next_start[:,1][which_line_section<0]
+            closest_pt_x[which_line_section>1] = next_end[:,0][which_line_section>1]
+            closest_pt_y[which_line_section>1] = next_end[:,1][which_line_section>1]
+            closest_pt_x[np.logical_and(which_line_section<=1, which_line_section>=0)] = (next_start[:,0] + np.multiply(which_line_section,c))[np.logical_and(which_line_section<=1, which_line_section>=0)]
+            closest_pt_y[np.logical_and(which_line_section<=1, which_line_section>=0)] = (next_start[:,1] + np.multiply(which_line_section,d))[np.logical_and(which_line_section<=1, which_line_section>=0)]
+
+            #min dist from pt to that closest point (ie closes dist from pt to line segment)
+            dist = np.sqrt((pt[:,x_index]-closest_pt_x)*(pt[:,x_index]-closest_pt_x) + (pt[:,y_index]-closest_pt_y)*(pt[:,y_index]-closest_pt_y))
+
+            #pick which line segment it's closest to, and update vars accordingly
+            curr_seg[dist<=min_perp_dist] += 1
+            moved_to_next[dist<=min_perp_dist] = 1
+            curr_forward[dist<=min_perp_dist] = which_line_section[dist<=min_perp_dist]#### np.clip(which_line_section,0,1)[dist<=min_perp_dist]
+            min_perp_dist = np.min([min_perp_dist, dist], axis=0)
+
+            ################## scoring
+            #penalize horiz dist
+            scores += min_perp_dist*horiz_penalty_factor
+
+            #penalize moving backward
+            scores[moved_to_next==0] += (prev_forward - curr_forward)[moved_to_next==0]*backward_discouragement
+
+            #penalize heading away from angle of line
+            desired_yaw = np.arctan2(curr_end[:,1]-curr_start[:,1], curr_end[:,0]-curr_start[:,0])
+            curr_yaw = np.arctan2(pt[:,yaw_sin_index],pt[:,yaw_cos_index])
+            diff = np.abs(moving_distance(desired_yaw, curr_yaw))
+
+            scores += diff*heading_penalty_factor
+
+            #update
+            prev_forward = np.copy(curr_forward)
+            prev_pt = np.copy(pt)
+
+        # print(scores)
+        print(scores[0])
+        return scores[0]
+
+if __name__ == '__main__':
+    #main()
+    pass
