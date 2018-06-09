@@ -123,12 +123,6 @@ class Dyn_Model:
                         dataZ_new_batch = dataZ_new[new_indeces, :]
 
                     #walk through the randomly reordered "old data"
-                    print(nData_old)
-                    print(batchsize_old_pts)
-                    print(batch)
-                    print(old_indeces.shape)
-                    print(dataX.shape)
-                    print(dataCamera.shape)
                     dataX_old_batch = dataX[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
                     dataZ_old_batch = dataZ[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
                     
@@ -137,7 +131,12 @@ class Dyn_Model:
                     dataZ_batch = np.concatenate((dataZ_old_batch, dataZ_new_batch))
 
                     if self.use_one_hot and self.use_camera: # Live camera
-                        dataCamera_batch = dataCamera[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :] 
+                        #Hasn't been tiled yet due to memory constraints
+                        steps_per_rollout = dataX.shape[0]/dataCamera.shape[0]
+                        print(steps_per_rollout)
+                        print(type(old_indeces))
+                        actual_indices = np.floor(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]/steps_per_rollout)
+                        dataCamera_batch = dataCamera[actual_indices, :, :, :] 
                     else:
                         dataOneHots_batch = dataOneHots[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
                     

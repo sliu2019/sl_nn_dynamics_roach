@@ -33,12 +33,14 @@ import thread
 from Queue import Queue
 from collections import OrderedDict
 
-# Roach Imports
 import command
 import time, sys, os, traceback
 import serial
+
+# Roach Imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from velociroach import *
-from roach_dynamics_learning.msg import velroach_msg
+from nn_dynamics_roach.msg import velroach_msg
 import shared_multi as shared
 import math
 from utils import *

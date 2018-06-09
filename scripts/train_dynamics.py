@@ -402,19 +402,22 @@ def main():
                     states_for_dataZ = full_states_for_dataX[1:,:]-full_states_for_dataX[:-1,:]
 
                     #tile the camera_info
-                    tiled_camera_info = np.tile(camera_info, (abbrev_states_for_dataX.shape[0], 1))
+                    #tiled_camera_info = np.tile(camera_info, (abbrev_states_for_dataX.shape[0]-1, 1))
 
                     #s,a,ds
                     dataX.append(abbrev_states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
                     dataY.append(actions_for_dataY[:-1,:])
                     dataZ.append(states_for_dataZ)
-                    dataCamera.append(tiled_camera_info)
+                    dataCamera.append(camera_info)
+                    #dataCamera = np.vstack((dataCamera, tiled_camera_info))
                 
                 #save training data
                 dataX=np.concatenate(dataX)
                 dataY=np.concatenate(dataY)
                 dataZ=np.concatenate(dataZ)
                 #dataCamera = np.concatenate(dataCamera)
+                # print(len(dataCamera))
+                # print(dataX.shape)
                 dataCamera = np.array(dataCamera)
                 np.save(save_dir+ '/data/dataX.npy', dataX)
                 np.save(save_dir+'/data/dataY.npy', dataY)
