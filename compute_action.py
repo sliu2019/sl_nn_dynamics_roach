@@ -42,7 +42,7 @@ class Actions(object):
       self.visualize_rviz = visualize_rviz
 
 
-    def compute_optimal_action(self,full_curr_state, abbrev_curr_state, desired_states, left_min, left_max, right_min, right_max, currently_executing_action, step, dyn_model, N, horizon, dt_steps, x_index, y_index, yaw_cos_index, yaw_sin_index, mean_x, mean_y, mean_z, std_x, std_y, std_z, publish_markers_desired, publish_markers, curr_line_segment, horiz_penalty_factor, backward_discouragement, heading_penalty_factor, old_curr_forward):
+    def compute_optimal_action(self,full_curr_state, abbrev_curr_state, image, desired_states, left_min, left_max, right_min, right_max, currently_executing_action, step, dyn_model, N, horizon, dt_steps, x_index, y_index, yaw_cos_index, yaw_sin_index, mean_x, mean_y, mean_z, std_x, std_y, std_z, publish_markers_desired, publish_markers, curr_line_segment, horiz_penalty_factor, backward_discouragement, heading_penalty_factor, old_curr_forward):
 
       #check if curr point in closest to curr_line_segment or if it moved on to next one
       curr_start = desired_states[curr_line_segment]
@@ -135,7 +135,7 @@ class Actions(object):
 
       #run forward sim to predict possible trajectories
       many_in_parallel=True
-      resulting_states = dyn_model.do_forward_sim([full_curr_state,0], np.copy(all_samples), None, many_in_parallel, None, None)
+      resulting_states = dyn_model.do_forward_sim([full_curr_state,0], np.copy(all_samples), None, image, many_in_parallel, None, None)
       resulting_states= np.array(resulting_states) #this is [horizon+1, N, statesize]
       #print("shape of resulting_states: ", resulting_states.shape)
 

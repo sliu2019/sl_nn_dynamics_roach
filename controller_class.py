@@ -27,9 +27,12 @@ import time, sys, os, traceback
 import serial
 import math
 import pickle
+import cv2
+from os import system
+from scipy.misc import imread
+
 
 #add nn_dynamics_roach to sys.path
-import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 #my imports
@@ -49,7 +52,7 @@ class Controller(object):
                 left_min, left_max, right_min, right_max, 
                 use_pid_mode,
                 frequency_value=20, stateSize=24, actionSize=2,
-                N=1000, horizon=4, serial_port='/dev/ttyUSB0', baud_rate = 57600, DEFAULT_ADDRS = ['\x00\x01'],visualize_rviz=False):
+                N=1000, horizon=4, serial_port='/dev/ttyUSB0', camera_serial_port = None, baud_rate = 57600, DEFAULT_ADDRS = ['\x00\x01'],visualize_rviz=False):
 
       #set vars
       self.visualize_rviz=visualize_rviz
@@ -204,6 +207,7 @@ class Controller(object):
 
       list_robot_info=[]
       list_mocap_info=[]
+      list_camera_info = [] #left empty if not using camera
 
       command_frequency = 0
       time_compute_action = 0
@@ -291,6 +295,37 @@ class Controller(object):
         # print("mocap info: ", self.mocap_info)
         abbrev_curr_state, old_time, old_pos, old_al, old_ar = singlestep_to_state(robotinfo, self.mocap_info, old_time, old_pos, old_al, old_ar, self.state_representation)
 
+        # Get live camera input
+        if camera_serial_port: #If not none  
+          cap = cv2.VideoCapture(self.serial_port[-1])
+          ret, frame = cap.read()
+
+          # cv2.imshow('frame', frame)
+
+          # A temporary file that it's ok to continuously write over
+          # "Image" object in OpenCV to .jpg
+          temp_img_filename = "frame.jpg"
+          cv2.imwrite(temp_img_filename, frame)
+          # Crop to correct size
+          system('convert ' + temp_img_filename + ' -crop 480x480+80+0 ' + temp_img_filename + '_cropped.jpg')
+          system('convert ' + temp_img_filename + '_cropped.jpg' + ' -resize 227x227 ' + temp_img_filename + '_final.jpg')
+
+          # **********PREPROCESS**************
+          # Subtract mean, flip rgb to bgr, then feed into alexnet + random projection + feedforwardnetwork_camera 
+          # This should be the mean of the dataset alexnet was trained on....
+          training_mean = np.load(self.save_dir +'/'+ self.traj_save_path +'/data/mean_camera.npy')
+
+          img = (imread(temp_img_filename + '_final.jpg')[:,:,:3]).astype(float32)
+
+          img = img - training_mean 
+          img[:, :, 0], img[:, :, 2] = img[:, :, 2], img[:, :, 0]
+
+          # cv2.waitKey(0)
+          # cv2.destroyAllWindows()
+          cap.release()
+
+          # Add to sequence of images, used for training
+          list_camera_info.append(img)
         #########################
         ## CHECK STOPPING COND ##
         #########################
@@ -307,8 +342,10 @@ class Controller(object):
           #save for playback debugging
           robot_file= self.save_dir +'/'+ self.traj_save_path +'/robot_info.obj'
           mocap_file= self.save_dir +'/'+ self.traj_save_path +'/mocap_info.obj'
+          camera_file = self.save_dir +'/'+ self.traj_save_path +'/camera_info.obj'
           pickle.dump(list_robot_info,open(robot_file,'w'))
           pickle.dump(list_mocap_info,open(mocap_file,'w'))
+          pickle.dump(list_camera_info,open(camera_file,'w'))
 
           #save
           np.save(self.save_dir +'/'+ self.traj_save_path +'/actions.npy', self.actions_taken)
@@ -324,7 +361,7 @@ class Controller(object):
           print("Empirical time between commands (in seconds): ", command_frequency/float(num_steps_for_rollout))
           print("Empirical time to execute compute_action for k = ", self.N, " and H = ", self.horizon, " is:", time_compute_action/float(number_compute_action))
 
-          return(self.traj_taken, self.actions_taken, self.desired_states)
+          return(self.traj_taken, self.actions_taken, self.desired_states, list_camera_info)
 
         ########################
         #### COMPUTE ACTION ####
@@ -342,7 +379,7 @@ class Controller(object):
           time_before = time.time()
           optimal_action, curr_line_segment, old_curr_forward, \
               save_perp_dist, save_forward_dist, saved_old_forward_dist, \
-              save_moved_to_next, save_desired_heading, save_curr_heading = self.a.compute_optimal_action(np.copy(full_curr_state), np.copy(abbrev_curr_state), self.desired_states, \
+              save_moved_to_next, save_desired_heading, save_curr_heading = self.a.compute_optimal_action(np.copy(full_curr_state), np.copy(abbrev_curr_state), img, self.desired_states, \
                                                                                                           self.left_min, self.left_max, self.right_min, self.right_max, \
                                                                                                           np.copy(optimal_action), step, self.dyn_model, self.N, \
                                                                                                           self.horizon, self.dt_steps, self.x_index, self.y_index, \

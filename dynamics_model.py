@@ -11,7 +11,7 @@ class Dyn_Model:
 
     def __init__(self, inputSize, outputSize, sess, learning_rate, batchsize, which_agent, x_index, y_index, 
                 num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, np_datatype,
-                print_minimal, feedforward_network, use_one_hot, curr_env_onehot, N, use_multistep_loss=False, one_hot_dims=4):
+                print_minimal, feedforward_network, use_one_hot, use_camera, curr_env_onehot, N, use_multistep_loss=False, one_hot_dims=4):
 
         
 
@@ -33,6 +33,7 @@ class Dyn_Model:
         self.use_multistep_loss = use_multistep_loss
         self.np_datatype = np_datatype
         self.use_one_hot = use_one_hot
+        self.use_camera = use_camera
         self.one_hot_dims=one_hot_dims
 
         self.curr_env_onehot = curr_env_onehot
@@ -45,10 +46,15 @@ class Dyn_Model:
         #placeholders
         self.x_ = tf.placeholder(tf_datatype, shape=[None, self.inputSize], name='x') #inputs
         self.z_ = tf.placeholder(tf_datatype, shape=[None, self.outputSize], name='z') #labels
-        self.tiled_onehots = tf.placeholder(tf_datatype, shape=[None, self.one_hot_dims]) #tiled one hot vectors
         self.next_z_ = tf.placeholder(tf_datatype, shape=[None, 3, self.outputSize], name='next_z')
         #forward pass
-        self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
+        if self.use_one_hot and self.use_camera:
+            self.tiled_camera_input = tf.placeholder(tf_datatype, shape=[None, 227, 227, 3])
+            self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
+                                                    num_fc_layers, depth_fc_layers, tf_datatype, self.tiled_camera_input)
+        else:
+            self.tiled_onehots = tf.placeholder(tf_datatype, shape=[None, self.one_hot_dims]) #tiled one hot vectors
+            self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
                                                     num_fc_layers, depth_fc_layers, tf_datatype, self.tiled_onehots)
 
         if self.use_multistep_loss:
@@ -72,7 +78,7 @@ class Dyn_Model:
                     if g is not None]
         self.train_step = self.opt.apply_gradients(self.gv)
 
-    def train(self, dataX, dataZ, dataOneHots, dataX_new, dataZ_new, nEpoch, save_dir, fraction_use_new):
+    def train(self, dataX, dataZ, dataOneHots, dataCamera, dataX_new, dataZ_new, nEpoch, save_dir, fraction_use_new):
 
         '''TO DO: new data doesnt have corresponding onehots right now'''
 
@@ -117,50 +123,42 @@ class Dyn_Model:
                         dataZ_new_batch = dataZ_new[new_indeces, :]
 
                     #walk through the randomly reordered "old data"
+                    print(nData_old)
+                    print(batchsize_old_pts)
+                    print(batch)
+                    print(old_indeces.shape)
+                    print(dataX.shape)
+                    print(dataCamera.shape)
                     dataX_old_batch = dataX[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
                     dataZ_old_batch = dataZ[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
                     
                     #combine the old and new data
                     dataX_batch = np.concatenate((dataX_old_batch, dataX_new_batch))
                     dataZ_batch = np.concatenate((dataZ_old_batch, dataZ_new_batch))
-                    dataOneHots_batch = dataOneHots[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
+
+                    if self.use_one_hot and self.use_camera: # Live camera
+                        dataCamera_batch = dataCamera[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :] 
+                    else:
+                        dataOneHots_batch = dataOneHots[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
+                    
 
                     data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
                     data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
                     dataZ_next = dataZ[data_next_indeces, :]
 
                     #one iteration of feedforward training
-                    _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
+                    if self.use_one_hot and self.use_camera:
+                        _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
+                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch,
+                                                                self.next_z_: dataZ_next, self.tiled_camera_input: dataCamera_batch})
+                    else:
+                        _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
                                                                 feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch,
                                                                 self.next_z_: dataZ_next, self.tiled_onehots: dataOneHots_batch})
-                    training_loss_list.append(loss)
-                    avg_loss+= loss
-                    num_batches+=1
-
-            '''#train completely from new set ######### TO DO:
-            else: 
-                for batch in range(int(math.floor(num_new_pts / batchsize_new_pts))):
-
-                    #walk through the shuffled new data
-                    dataX_batch = dataX_new[batch*batchsize_new_pts:(batch+1)*batchsize_new_pts, :]
-                    dataZ_batch = dataZ_new[batch*batchsize_new_pts:(batch+1)*batchsize_new_pts, :]
-                    data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
-                    data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
-                    dataZ_next = dataZ[data_next_indeces, :]
-
-                    #one iteration of feedforward training
-                    _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
-                                                                feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, 
-                                                                self.next_z_: dataZ_next, self.tiled_onehots: tiled_onehots})
 
                     training_loss_list.append(loss)
                     avg_loss+= loss
                     num_batches+=1
-
-                #shuffle new dataset after an epoch (if training only on it)
-                p = npr.permutation(dataX_new.shape[0])
-                dataX_new = dataX_new[p]
-                dataZ_new = dataZ_new[p]'''
 
             #save losses after an epoch
             np.save(save_dir + '/training_losses.npy', training_loss_list)
@@ -180,14 +178,23 @@ class Dyn_Model:
             # Batch the training data
             dataX_batch = dataX[batch*self.batchsize:(batch+1)*self.batchsize, :]
             dataZ_batch = dataZ[batch*self.batchsize:(batch+1)*self.batchsize, :]
-            dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            if dataOneHots:
+                dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            elif dataCamera:
+                dataCamera_batch = dataCamera[batch*self.batchsize:(batch+1)*self.batchsize, :]
 
             data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
             data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
             dataZ_next = dataZ[data_next_indeces, :]
             #one iteration of feedforward training
-            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
+
+            if dataOneHots:
+                loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
                                                                                 self.tiled_onehots: dataOneHots_batch})
+            elif dataCamera:
+                loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
+                                                                                self.tiled_camera_input: dataCamera_batch})
+
             avg_old_loss+= loss
             iters_in_batch+=1
         old_loss =  avg_old_loss/iters_in_batch
@@ -199,14 +206,22 @@ class Dyn_Model:
             # Batch the training data
             dataX_batch = dataX_new[batch*self.batchsize:(batch+1)*self.batchsize, :]
             dataZ_batch = dataZ_new[batch*self.batchsize:(batch+1)*self.batchsize, :]
-            dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
+
+            if dataOneHots:
+                dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            elif dataCamera:
+                dataCamera_batch = dataCamera[batch*self.batchsize:(batch+1)*self.batchsize, :]
 
             data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
             data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
             dataZ_next = dataZ[data_next_indeces, :]
             #one iteration of feedforward training
-            loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
+            if dataOneHots:
+                loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
                                                                                 self.tiled_onehots: dataOneHots_batch})
+            elif dataCamera:
+                loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
+                                                                                self.tiled_camera_input: dataCamera_batch})
             avg_new_loss+= loss
             iters_in_batch+=1
         if(iters_in_batch==0):
@@ -243,10 +258,11 @@ class Dyn_Model:
         return (avg_loss/iters_in_batch)'''
 
     #multistep prediction using the learned dynamics model at each step
-    def do_forward_sim(self, forwardsim_x_true, forwardsim_y, forwardsim_onehot, many_in_parallel, env_inp, which_agent):
+    def do_forward_sim(self, forwardsim_x_true, forwardsim_y, forwardsim_onehot, img, many_in_parallel, env_inp, which_agent):
         # forwardsim_x_true: actual state sequence: should be a full state representation
         # forwardsim_y : action sequence
-        # forwardsim_onehot : fake tiled onehots
+        # forwardsim_onehot : only used for the 1 forward sim in train_dynamics
+        # img: camera image : 
         # many_in_parallel: evaluate many action sequences simultaneously just using matrix-vector notation
         #init vars
         state_list = []
@@ -256,7 +272,11 @@ class Dyn_Model:
             N= forwardsim_y.shape[0]
             
             if(self.use_one_hot):
-                self.tiled_curr_env_onehot = np.tile(self.curr_env_onehot, (N,1))
+                if self.use_camera:
+                    # Q: Is it also just np.tile for 3D matrix inputs to a CNN?
+                    self.tiled_img = np.tile(img, (N, 1))
+                else:
+                    self.tiled_curr_env_onehot = np.tile(self.curr_env_onehot, (N,1))
             else:
                 self.tiled_curr_env_onehot= np.ones((1,self.one_hot_dims))
             
@@ -289,7 +309,10 @@ class Dyn_Model:
                 inputs_list= np.concatenate((states_preprocessed, actions_preprocessed), axis=1)
 
                 #run the N sims all at once
-                model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_onehots: self.tiled_curr_env_onehot}) 
+                if self.use_one_hot and self.use_camera:
+                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_camera_input: self.tiled_img}) 
+                else:
+                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_onehots: self.tiled_curr_env_onehot}) 
                 state_differences = np.multiply(model_output[0],array_stdz)+array_meanz
 
                 #update the state info
@@ -308,7 +331,11 @@ class Dyn_Model:
                 curr_control = np.expand_dims(curr_control, axis=0)
 
                 if(self.use_one_hot):
-                    curr_onehot = np.expand_dims(forwardsim_onehot[curr_index], axis=0) 
+                    if self.use_camera:
+                        # nothing to do here, currently
+                        img = img
+                    else:
+                        curr_onehot = np.expand_dims(forwardsim_onehot[curr_index], axis=0) 
                 else:
                     curr_onehot= np.ones((1,self.one_hot_dims))
 
@@ -322,7 +349,10 @@ class Dyn_Model:
                 inputs_preprocessed = np.expand_dims(np.append(curr_state_preprocessed, curr_control_preprocessed), axis=0)
 
                 #run through NN to get prediction
-                model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_onehots: curr_onehot}) 
+                if self.use_one_hot and self.use_camera:
+                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_camera_input: img}) 
+                else:
+                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_onehots: curr_onehot}) 
 
                 #multiply by std and add mean back in
                 state_differences= (model_output[0][0]*self.std_z)+self.mean_z

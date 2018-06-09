@@ -15,6 +15,7 @@ import sys
 from six.moves import cPickle
 from scipy.signal import savgol_filter
 from scipy.signal import medfilt
+from scipy.misc import imread
 
 
 #add nn_dynamics_roach to sys.path
@@ -41,6 +42,7 @@ def main():
     ##################################
     ######### SPECIFY VARS ###########
     ##################################
+    cheaty_training = True
 
     # Which trajectory, saving filenames
     run_num= 1                                         #directory for saving everything
@@ -49,13 +51,13 @@ def main():
     traj_save_path= desired_shape_for_traj + str(save_run_num)     #directory name inside run_num directory
 
     #######TRAINING########## 
-    train_now = False
+    train_now = True
 
     # train_now = False: which saved model to potentially load from
     model_name = 'camera_no_xy'     #onehot_smaller, combined, camera
     
     # train_now = True: select training data
-    use_existing_data = True #Basically, if true, use pre-processed data; false, re-pre-process the data specified below
+    use_existing_data = False #Basically, if true, use pre-processed data; false, re-pre-process the data specified below
     # use_existing_data = true. Specify task between: 'carpet','styrofoam', 'gravel', 'turf', 'all'
     task_type=['all']                 
     months = ['01','02']
@@ -65,8 +67,9 @@ def main():
     # Use one hot is if you're going to have a conditioned NN or not; use camera is if it's going to be 1-hot or camera
     use_one_hot= True #True
     use_camera = True #True
-    #Cheating method: what you do when no camera live-feed
-    curr_env_onehot = create_onehot('carpet', use_camera, mappings)
+    # curr_env_onehot only matters if we're not using camera
+    #curr_env_onehot = create_onehot('carpet', use_camera, mappings)
+    curr_env_onehot = None
 
     # training/validation split
     training_ratio = 0.9
@@ -89,6 +92,7 @@ def main():
 
     #xbee connection port
     serial_port = '/dev/ttyUSB1'
+    camera_serial_port = '/dev/ttyUSB1'
 
     #controller
     visualize_rviz=True   #turning this off could make things go faster
@@ -146,15 +150,32 @@ def main():
         if len(lst) >= 3:
             surface = lst[0]
             month = lst[2]
-            if ((surface in task_type or "all" in task_type) and month in months):
+            if ((surface in task_type or ("all" in task_type and surface != "joystick")) and month in months):
                 for file in files:
                     path_lst.append(os.path.join(subdir, file))
+
+                    if cheaty_training:
+                        # Need to tell which kind of random surface file belongs with this robot, mocap data
+                        filename_tokenized = file.split("_")
+                        if "robot" in filename_tokenized:
+                            fake_camera_filename = filename_tokenized[0] + "_camera_info_" + surface + ".obj"
+                            path_lst.append(os.path.join(subdir, fake_camera_filename))
+
     path_lst.sort()
-    print "num of rollouts: ", len(path_lst)/2
-    training_rollouts = int(len(path_lst)*training_ratio)
-    if training_rollouts%2 != 0:
-        training_rollouts -= 1
-    validation_rollouts = len(path_lst) - training_rollouts
+
+    if use_one_hot and use_camera:
+        print("num of rollouts: ", len(path_lst)/3)
+        training_rollouts = int(len(path_lst)*training_ratio)
+        
+        training_rollouts = training_rollouts - (training_rollouts % 3)
+        validation_rollouts = len(path_lst) - training_rollouts
+
+    else:
+        print "num of rollouts: ", len(path_lst)/2
+        training_rollouts = int(len(path_lst)*training_ratio)
+        if training_rollouts%2 != 0:
+            training_rollouts -= 1
+        validation_rollouts = len(path_lst) - training_rollouts
 
     ##################################
     ######### MOTOR LIMITS ###########
@@ -266,10 +287,11 @@ def main():
             dataY = np.load(save_dir+ '/data/dataY.npy')
             dataZ = np.load(save_dir+ '/data/dataZ.npy')
 
-            print("Dimensions of dataX are: ", dataX.shape)
-
             if(use_one_hot):
-                dataOneHots = np.load(save_dir+ '/data/dataOneHots.npy')
+                if use_camera:
+                    dataCamera = np.load(save_dir +'/data/dataCamera.npy')
+                else:
+                    dataOneHots = np.load(save_dir+ '/data/dataOneHots.npy')
             else:
                 dataOneHots=0
 
@@ -278,7 +300,10 @@ def main():
             controls_val = np.load(save_dir+ '/data/controls_val.npy')
 
             if(use_one_hot):
-                onehots_val = np.load(save_dir+ '/data/onehots_val.npy')
+                if(use_camera):
+                    camera_val = np.load(save_dir + '/data/camera_val.npy')
+                else:
+                    onehots_val = np.load(save_dir+ '/data/onehots_val.npy')
             else:
                 onehots_val=0
 
@@ -287,7 +312,10 @@ def main():
             forwardsim_y = np.load(save_dir+ '/data/forwardsim_y.npy')
 
             if(use_one_hot):
-                forwardsim_onehot = np.load(save_dir+ '/data/forwardsim_onehot.npy')
+                if use_camera:
+                    forwardsim_camera = np.load(save_dir + '/data/forwardsim_camera.npy')
+                else:
+                    forwardsim_onehot = np.load(save_dir+ '/data/forwardsim_onehot.npy')
             else:
                 forwardsim_onehot=0
 
@@ -297,101 +325,291 @@ def main():
             ############ TRAINING DATA ###########
             ######################################
 
-            dataX=[]
-            dataY=[]
-            dataZ=[]
-            dataOneHots=[]
-            # for rollout_counter in training_rollouts:
-            for i in range(training_rollouts/2):
+            if use_one_hot and use_camera and not cheaty_training:
+                dataX=[]
+                dataY=[]
+                dataZ=[]
+                dataCamera=[]
+                # for rollout_counter in training_rollouts:
+                for i in range(training_rollouts/3):
 
-                #read in data from 1 rollout
-                # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
-                # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
-                mocap_file = path_lst[2*i]
-                robot_file = path_lst[2*i+1]
-                robot_info = pickle.load(open(robot_file,'r'))
-                mocap_info = pickle.load(open(mocap_file,'r'))
+                    #read in data from 1 rollout
+                    # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                    # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                    camera_file = path_lst[3*i]
+                    mocap_file = path_lst[3*i +1]
+                    robot_file = path_lst[3*i+2]
+                    camera_info = pickle.load(open(camera_file, 'r'))
+                    robot_info = pickle.load(open(robot_file,'r'))
+                    mocap_info = pickle.load(open(mocap_file,'r'))
 
-                #turn saved rollout into s
-                full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
-                abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
-                    #states_for_dataX: (length-1)x24 cuz ignore 1st one (no deriv)
-                    #actions_for_dataY: (length-1)x2
+                    #turn saved rollout into s
+                    full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                    abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
 
-                #use s to create ds
-                states_for_dataZ = full_states_for_dataX[1:,:]-full_states_for_dataX[:-1,:]
+                    #use s to create ds
+                    states_for_dataZ = full_states_for_dataX[1:,:]-full_states_for_dataX[:-1,:]
 
-                #s,a,ds
-                dataX.append(abbrev_states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
-                dataY.append(actions_for_dataY[:-1,:])
-                dataZ.append(states_for_dataZ)
+                    #s,a,ds
+                    dataX.append(abbrev_states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
+                    dataY.append(actions_for_dataY[:-1,:])
+                    dataZ.append(states_for_dataZ)
+                    dataCamera.append(camera_info)
+                
+                #save training data
+                dataX=np.concatenate(dataX)
+                dataY=np.concatenate(dataY)
+                dataZ=np.concatenate(dataZ)
+                dataCamera = np.concatenate(dataCamera)
+                np.save(save_dir+ '/data/dataX.npy', dataX)
+                np.save(save_dir+'/data/dataY.npy', dataY)
+                np.save(save_dir+ '/data/dataZ.npy', dataZ)
+                np.save(save_dir+ '/data/dataCamera.npy', dataCamera)
+            elif cheaty_training:
+                dataX=[]
+                dataY=[]
+                dataZ=[]
+                dataCamera=[]
+                # for rollout_counter in training_rollouts:
+                # print("path list: ", path_lst)
+                for i in range(training_rollouts/3):
 
-                #create the corresponding one_hot vector
-                curr_surface = mocap_file.split("/")[-2].split("_")[0]
-                curr_onehot= create_onehot(curr_surface, use_camera, mappings)
-                tiled_curr_onehot = np.tile(curr_onehot,(abbrev_states_for_dataX.shape[0]-1,1))
-                dataOneHots.append(tiled_curr_onehot)
-            
-            #save training data
-            dataX=np.concatenate(dataX)
-            dataY=np.concatenate(dataY)
-            dataZ=np.concatenate(dataZ)
-            dataOneHots=np.concatenate(dataOneHots)
-            np.save(save_dir+ '/data/dataX.npy', dataX)
-            np.save(save_dir+'/data/dataY.npy', dataY)
-            np.save(save_dir+ '/data/dataZ.npy', dataZ)
-            np.save(save_dir+ '/data/dataOneHots.npy', dataOneHots)
+                    #read in data from 1 rollout
+                    # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                    # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                    camera_file = path_lst[3*i]
+                    mocap_file = path_lst[3*i + 1]
+                    robot_file = path_lst[3*i+2]
+
+                    curr_surface = camera_file.split("/")[-1].split("_")[3].split(".")[0]
+
+                    index = np.random.randint(0, 10)
+                    camera_file = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/images/' + curr_surface + "_images_" + str(index) + ".jpg"
+                    training_mean= [123.68, 116.779, 103.939] # of the images in that file
+                    img = (imread(camera_file)[:,:,:3]).astype(np.float32)
+                    img = img - training_mean
+                    img[:, :, 0], img[:, :, 2] = img[:, :, 2], img[:, :, 0]
+                    camera_info = img
+
+                    robot_info = pickle.load(open(robot_file,'r'))
+                    mocap_info = pickle.load(open(mocap_file,'r'))
+
+                    #turn saved rollout into s
+                    full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                    abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
+
+                    #use s to create ds
+                    states_for_dataZ = full_states_for_dataX[1:,:]-full_states_for_dataX[:-1,:]
+
+                    #tile the camera_info
+                    tiled_camera_info = np.tile(camera_info, (abbrev_states_for_dataX.shape[0], 1))
+
+                    #s,a,ds
+                    dataX.append(abbrev_states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
+                    dataY.append(actions_for_dataY[:-1,:])
+                    dataZ.append(states_for_dataZ)
+                    dataCamera.append(tiled_camera_info)
+                
+                #save training data
+                dataX=np.concatenate(dataX)
+                dataY=np.concatenate(dataY)
+                dataZ=np.concatenate(dataZ)
+                #dataCamera = np.concatenate(dataCamera)
+                dataCamera = np.array(dataCamera)
+                np.save(save_dir+ '/data/dataX.npy', dataX)
+                np.save(save_dir+'/data/dataY.npy', dataY)
+                np.save(save_dir+ '/data/dataZ.npy', dataZ)
+                np.save(save_dir+ '/data/dataCamera.npy', dataCamera)
+            else:
+
+                dataX=[]
+                dataY=[]
+                dataZ=[]
+                dataOneHots=[]
+                # for rollout_counter in training_rollouts:
+                for i in range(training_rollouts/2):
+
+                    #read in data from 1 rollout
+                    # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                    # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                    mocap_file = path_lst[2*i]
+                    robot_file = path_lst[2*i+1]
+                    robot_info = pickle.load(open(robot_file,'r'))
+                    mocap_info = pickle.load(open(mocap_file,'r'))
+
+                    #turn saved rollout into s
+                    full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                    abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
+                        #states_for_dataX: (length-1)x24 cuz ignore 1st one (no deriv)
+                        #actions_for_dataY: (length-1)x2
+
+                    #use s to create ds
+                    states_for_dataZ = full_states_for_dataX[1:,:]-full_states_for_dataX[:-1,:]
+
+                    #s,a,ds
+                    dataX.append(abbrev_states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
+                    dataY.append(actions_for_dataY[:-1,:])
+                    dataZ.append(states_for_dataZ)
+
+                    #create the corresponding one_hot vector
+                    curr_surface = mocap_file.split("/")[-2].split("_")[0]
+                    curr_onehot= create_onehot(curr_surface, use_camera, mappings)
+                    tiled_curr_onehot = np.tile(curr_onehot,(abbrev_states_for_dataX.shape[0]-1,1))
+                    dataOneHots.append(tiled_curr_onehot)
+                
+                #save training data
+                dataX=np.concatenate(dataX)
+                dataY=np.concatenate(dataY)
+                dataZ=np.concatenate(dataZ)
+                dataOneHots=np.concatenate(dataOneHots)
+                np.save(save_dir+ '/data/dataX.npy', dataX)
+                np.save(save_dir+'/data/dataY.npy', dataY)
+                np.save(save_dir+ '/data/dataZ.npy', dataZ)
+                np.save(save_dir+ '/data/dataOneHots.npy', dataOneHots)
 
             ######################################
             ########## VALIDATION DATA ###########
             ######################################
 
-            states_val = []
-            controls_val = []
-            onehots_val = []
-            # for rollout_counter in validation_rollouts:
-            for i in range(validation_rollouts/2):
+            if use_one_hot and use_camera and not cheaty_training:
+                states_val = []
+                controls_val = []
+                camera_val = []
+                # for rollout_counter in validation_rollouts:
+                for i in range(validation_rollouts/3):
 
-                #read in data from 1 rollout
-                # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
-                # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
-                mocap_file = path_lst[training_rollouts + 2*i]
-                robot_file = path_lst[training_rollouts + 2*i+1]
-                robot_info = pickle.load(open(robot_file,'r'))
-                mocap_info = pickle.load(open(mocap_file,'r'))
+                    camera_file = path_lst[training_rollouts + 3*i]
+                    mocap_file = path_lst[training_rollouts + 3*i + 1]
+                    robot_file = path_lst[training_rollouts + 3*i+ 2]
+                    camera_info = pickle.load(open(camera_file, 'r'))
+                    robot_info = pickle.load(open(robot_file,'r'))
+                    mocap_info = pickle.load(open(mocap_file,'r'))
 
-                #turn saved rollout into s
-                full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
-                abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
-                states_val.append(abbrev_states_for_dataX)
-                controls_val.append(actions_for_dataY)
+                    #turn saved rollout into s
+                    full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                    abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
+                    states_val.append(abbrev_states_for_dataX)
+                    controls_val.append(actions_for_dataY)
+                    camera_val.append(camera_info)
 
-                # Is this data just unlabeled or something????? Why?
+                #save validation data
+                states_val = np.array(states_val)
+                controls_val = np.array(controls_val)
+                camera_val = np.array(camera_val)
+                np.save(save_dir+ '/data/states_val.npy', states_val)
+                np.save(save_dir+ '/data/controls_val.npy', controls_val)
+                np.save(save_dir+ '/data/camera_val.npy', camera_val)
 
-                #create the corresponding one_hot vector
-                curr_surface = mocap_file.split("/")[-2].split("_")[0]
-                curr_onehot= create_onehot(curr_surface, use_camera, mappings)
-                tiled_curr_onehot = np.tile(curr_onehot,(abbrev_states_for_dataX.shape[0],1))
-                onehots_val.append(tiled_curr_onehot)
+                #set aside un-preprocessed data, to use later for forward sim
+                forwardsim_x_true = full_states_for_dataX[4:16] #use these steps from the last validation rollout
+                forwardsim_y = actions_for_dataY[4:16] #use these steps from the last validation rollout
+                forwardsim_camera = camera_val[4:16] #use these steps from the last validation rollout
 
-            #save validation data
-            states_val = np.array(states_val)
-            controls_val = np.array(controls_val)
-            onehots_val = np.array(onehots_val)
-            np.save(save_dir+ '/data/states_val.npy', states_val)
-            np.save(save_dir+ '/data/controls_val.npy', controls_val)
-            np.save(save_dir+ '/data/onehots_val.npy', onehots_val)
+                np.save(save_dir+ '/data/forwardsim_x_true.npy', forwardsim_x_true)
+                np.save(save_dir+ '/data/forwardsim_y.npy', forwardsim_y)
+                np.save(save_dir+ '/data/forwardsim_camera.npy', forwardsim_camera)
+            elif cheaty_training:
+                states_val = []
+                controls_val = []
+                camera_val = []
+                # for rollout_counter in training_rollouts:
+                
+                for i in range(validation_rollouts/3):
 
-            #set aside un-preprocessed data, to use later for forward sim
-            print("inside traindynamics, the dimensions of full state are: ", full_states_for_dataX.shape)
-            forwardsim_x_true = full_states_for_dataX[4:16] #use these steps from the last validation rollout
-            print(forwardsim_x_true.shape)
-            forwardsim_y = actions_for_dataY[4:16] #use these steps from the last validation rollout
-            forwardsim_onehot = tiled_curr_onehot[4:16] #use these steps from the last validation rollout
+                    #read in data from 1 rollout
+                    # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                    # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                    camera_file = path_lst[training_rollouts + 3*i]
+                    mocap_file = path_lst[training_rollouts + 3*i + 1]
+                    robot_file = path_lst[training_rollouts + 3*i+ 2]
 
-            np.save(save_dir+ '/data/forwardsim_x_true.npy', forwardsim_x_true)
-            np.save(save_dir+ '/data/forwardsim_y.npy', forwardsim_y)
-            np.save(save_dir+ '/data/forwardsim_onehot.npy', forwardsim_onehot)
+                    #print(camera_file)
+                    curr_surface = camera_file.split("/")[-1].split("_")[3].split(".")[0]
+
+                    index = None
+                    if(curr_surface=='carpet'):
+                        index = 0
+                    if(curr_surface=='gravel'):
+                        index = 20
+                    if(curr_surface=='turf'):
+                        index = 30
+                    if(curr_surface=='styrofoam'):
+                        index = 10
+                    index += np.random.randint(10) 
+                    camera_info = mappings[index]
+
+                    robot_info = pickle.load(open(robot_file,'r'))
+                    mocap_info = pickle.load(open(mocap_file,'r'))
+
+                    #turn saved rollout into s
+                    full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                    abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
+                    tiled_camera_info = np.tile(camera_info, (abbrev_states_for_dataX.shape[0],1))
+
+                    states_val.append(abbrev_states_for_dataX)
+                    controls_val.append(actions_for_dataY)
+                    camera_val.append(tiled_camera_info)
+                #save validation data
+                states_val = np.array(states_val)
+                controls_val = np.array(controls_val)
+                camera_val = np.array(camera_val)
+                np.save(save_dir+ '/data/states_val.npy', states_val)
+                np.save(save_dir+ '/data/controls_val.npy', controls_val)
+                np.save(save_dir+ '/data/camera_val.npy', camera_val)
+
+                #set aside un-preprocessed data, to use later for forward sim
+                forwardsim_x_true = full_states_for_dataX[4:16] #use these steps from the last validation rollout
+                forwardsim_y = actions_for_dataY[4:16] #use these steps from the last validation rollout
+                forwardsim_camera = camera_val[4:16] #use these steps from the last validation rollout
+
+                np.save(save_dir+ '/data/forwardsim_x_true.npy', forwardsim_x_true)
+                np.save(save_dir+ '/data/forwardsim_y.npy', forwardsim_y)
+                np.save(save_dir+ '/data/forwardsim_camera.npy', forwardsim_camera)
+            else:
+                states_val = []
+                controls_val = []
+                onehots_val = []
+                # for rollout_counter in validation_rollouts:
+                for i in range(validation_rollouts/2):
+
+                    #read in data from 1 rollout
+                    # robot_file= data_dir + "/" + str(rollout_counter) + '_robot_info.obj'
+                    # mocap_file= data_dir + "/" + str(rollout_counter) + '_mocap_info.obj'
+                    mocap_file = path_lst[training_rollouts + 2*i]
+                    robot_file = path_lst[training_rollouts + 2*i+1]
+                    robot_info = pickle.load(open(robot_file,'r'))
+                    mocap_info = pickle.load(open(mocap_file,'r'))
+
+                    #turn saved rollout into s
+                    full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
+                    abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
+                    states_val.append(abbrev_states_for_dataX)
+                    controls_val.append(actions_for_dataY)
+
+                    # Is this data just unlabeled or something????? Why?
+
+                    #create the corresponding one_hot vector
+                    curr_surface = mocap_file.split("/")[-2].split("_")[0]
+                    curr_onehot= create_onehot(curr_surface, use_camera, mappings)
+                    tiled_curr_onehot = np.tile(curr_onehot,(abbrev_states_for_dataX.shape[0],1))
+                    onehots_val.append(tiled_curr_onehot)
+
+                #save validation data
+                states_val = np.array(states_val)
+                controls_val = np.array(controls_val)
+                onehots_val = np.array(onehots_val)
+                np.save(save_dir+ '/data/states_val.npy', states_val)
+                np.save(save_dir+ '/data/controls_val.npy', controls_val)
+                np.save(save_dir+ '/data/onehots_val.npy', onehots_val)
+
+                #set aside un-preprocessed data, to use later for forward sim
+                forwardsim_x_true = full_states_for_dataX[4:16] #use these steps from the last validation rollout
+                forwardsim_y = actions_for_dataY[4:16] #use these steps from the last validation rollout
+                forwardsim_onehot = tiled_curr_onehot[4:16] #use these steps from the last validation rollout
+
+                np.save(save_dir+ '/data/forwardsim_x_true.npy', forwardsim_x_true)
+                np.save(save_dir+ '/data/forwardsim_y.npy', forwardsim_y)
+                np.save(save_dir+ '/data/forwardsim_onehot.npy', forwardsim_onehot)
 
         #################################################
         ### preprocess the old training dataset
@@ -417,6 +635,17 @@ def main():
         std_z = np.std(dataZ, axis = 0)
         dataZ = np.nan_to_num(dataZ/std_z)
 
+        if use_one_hot and use_camera:
+            mean_camera = np.mean(dataCamera, axis = 0) 
+
+            print("mean_camera's shape is: ", mean_camera.shape)
+            dataCamera = dataCamera - mean_camera
+            std_camera = np.std(dataCamera, axis = 0)
+            dataZ = np.nan_to_num(dataZ/std_z)
+
+            np.save(save_dir+ '/data/mean_camera.npy', mean_camera)
+            np.save(save_dir+ '/data/std_camera.npy', std_camera)
+
         #save mean and std to files for controller to use
         np.save(save_dir+ '/data/mean_x.npy', mean_x)
         np.save(save_dir+ '/data/mean_y.npy', mean_y)
@@ -428,7 +657,10 @@ def main():
         ## concatenate state and action, to be used for training dynamics
         inputs = np.concatenate((dataX, dataY), axis=1)
         outputs = np.copy(dataZ)
-        onehots = np.copy(dataOneHots)
+        if use_one_hot and use_camera:
+            camera_images = np.copy(dataCamera)
+        else:
+            onehots = np.copy(dataOneHots)
 
         #dimensions
         assert inputs.shape[0] == outputs.shape[0]
@@ -443,7 +675,7 @@ def main():
         #which model
         if(use_one_hot):
             if(use_camera):
-                from feedforward_network_camera import feedforward_network
+                from feedforward_network_live_camera import feedforward_network
             else:
                 from feedforward_network_one_hot import feedforward_network
         else:
@@ -453,7 +685,7 @@ def main():
         dyn_model = Dyn_Model(inputSize, outputSize, sess, lr, batchsize, 0, x_index, y_index, 
                             num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, 
                             std_x, std_y, std_z, tf_datatype, np_datatype, print_minimal, feedforward_network, 
-                            use_one_hot, curr_env_onehot, N,one_hot_dims=one_hot_dims)
+                            use_one_hot, use_camera, curr_env_onehot, N,one_hot_dims=one_hot_dims)
 
         #randomly initialize all vars
         sess.run(tf.initialize_all_variables())  ##sess.run(tf.global_variables_initializer()) 
@@ -473,19 +705,18 @@ def main():
         dataZ_new = np.zeros((0,dataZ.shape[1]))
         print("dataX dim: ", dataX.shape)
 
-        if(playback_mode):
-            print("making playback controller")
-            controller = ControllerPlayback(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
-                                left_min, left_max, right_min, right_max, 
-                                use_pid_mode=use_pid_mode,
-                                frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
-                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
-        else:
-            controller = Controller(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
-                                left_min, left_max, right_min, right_max, 
-                                use_pid_mode=use_pid_mode,
-                                frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
-                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
+        # if(playback_mode):
+        #     controller = ControllerPlayback(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
+        #                         left_min, left_max, right_min, right_max, 
+        #                         use_pid_mode=use_pid_mode,
+        #                         frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+        #                         N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
+        # else:
+        #     controller = Controller(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
+        #                         left_min, left_max, right_min, right_max, 
+        #                         use_pid_mode=use_pid_mode,
+        #                         frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+        #                         N=N, horizon=horizon, serial_port=serial_port, camera_serial_port = camera_serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
 
         while(counter<num_aggregation_iters):
 
@@ -521,10 +752,16 @@ def main():
             new_loss=0
 
             if(counter>0):
-                training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, onehots, inputs_new, outputs_new, nEpoch, save_dir, fraction_use_new)
+                if use_one_hot and use_camera:
+                    training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, None, camera_images, inputs_new, outputs_new, nEpoch, save_dir, fraction_use_new)
+                else:    
+                    training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, onehots, None, inputs_new, outputs_new, nEpoch, save_dir, fraction_use_new)
             if(counter==0):
                 if(train_now):
-                    training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, onehots, inputs_new, outputs_new, nEpoch_initial, save_dir, fraction_use_new)
+                    if use_one_hot and use_camera:
+                        training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, None, camera_images, inputs_new, outputs_new, nEpoch_initial, save_dir, fraction_use_new)
+                    else:
+                        training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, onehots, None, inputs_new, outputs_new, nEpoch_initial, save_dir, fraction_use_new)
                 else:
                     saver = tf.train.Saver()
                     saver.restore(sess, restore_dynamics_model_filepath)
@@ -556,7 +793,7 @@ def main():
             print("Model saved at ", save_path)
 
             #Just train for x, y right now
-            #return
+            return
 
             #####################################
             ## Validation Metrics
@@ -651,7 +888,7 @@ def main():
 
                 #for a given set of controls ... compare sim traj vs. learned model's traj (dont expect this to be good cuz error accum)
                 many_in_parallel=False
-                forwardsim_x_pred = dyn_model.do_forward_sim(forwardsim_x_true, forwardsim_y, forwardsim_onehot, many_in_parallel, None, None)    
+                forwardsim_x_pred = dyn_model.do_forward_sim(forwardsim_x_true, forwardsim_y, forwardsim_onehot, None, many_in_parallel, None, None)    
                 forwardsim_x_pred = np.array(forwardsim_x_pred)
 
                 # save results of forward sim
@@ -672,7 +909,7 @@ def main():
                 print
                 print
                 IPython.embed()
-                resulting_x, selected_u, desired_seq = controller.run(num_steps_for_rollout=num_steps_per_controller_run, aggregation_loop_counter=counter, dyn_model=dyn_model)
+                resulting_x, selected_u, desired_seq, camera_images = controller.run(num_steps_for_rollout=num_steps_per_controller_run, aggregation_loop_counter=counter, dyn_model=dyn_model)
                 selected_multiple_u.append(selected_u)
                 resulting_multiple_x.append(resulting_x)
 
