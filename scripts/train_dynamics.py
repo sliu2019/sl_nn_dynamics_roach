@@ -57,7 +57,7 @@ def main():
     model_name = 'camera_no_xy'     #onehot_smaller, combined, camera
     
     # train_now = True: select training data
-    use_existing_data = False #Basically, if true, use pre-processed data; false, re-pre-process the data specified below
+    use_existing_data = True #Basically, if true, use pre-processed data; false, re-pre-process the data specified below
     # use_existing_data = true. Specify task between: 'carpet','styrofoam', 'gravel', 'turf', 'all'
     task_type=['all']                 
     months = ['01','02']
@@ -403,7 +403,9 @@ def main():
 
                     #tile the camera_info
                     #tiled_camera_info = np.tile(camera_info, (abbrev_states_for_dataX.shape[0]-1, 1))
-
+                    if full_states_for_dataX.shape[0] != 49:
+                        print("Inconsistent rollout length")
+                    #print(full_states_for_dataX.shape[0])
                     #s,a,ds
                     dataX.append(abbrev_states_for_dataX[:-1,:]) #the last one doesnt have a corresponding next state
                     dataY.append(actions_for_dataY[:-1,:])
@@ -691,7 +693,8 @@ def main():
                             use_one_hot, use_camera, curr_env_onehot, N,one_hot_dims=one_hot_dims)
 
         #randomly initialize all vars
-        sess.run(tf.initialize_all_variables())  ##sess.run(tf.global_variables_initializer()) 
+        ##sess.run(tf.initialize_all_variables())  
+        sess.run(tf.global_variables_initializer()) 
 
         ##############################################
         ########## THE AGGREGATION LOOP ##############
@@ -754,6 +757,18 @@ def main():
             old_loss=0
             new_loss=0
 
+
+            #TEMPORARY
+            nEpoch = 20
+            start_time = time.time()
+            print("variable values before training: ")
+            all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+            var_vals = sess.run(all_vars)
+            first_var = var_vals[0]
+            second_var = var_vals[1]
+            print(first_var.shape)
+            print(second_var.shape)
+            
             if(counter>0):
                 if use_one_hot and use_camera:
                     training_loss, old_loss, new_loss = dyn_model.train(inputs, outputs, None, camera_images, inputs_new, outputs_new, nEpoch, save_dir, fraction_use_new)
@@ -768,6 +783,15 @@ def main():
                 else:
                     saver = tf.train.Saver()
                     saver.restore(sess, restore_dynamics_model_filepath)
+
+            print("variable values after training: ")
+            var_vals = sess.run(all_vars)
+            first_var_after = var_vals[0]
+            second_var_after = var_vals[1]
+            print(np.array_equal(first_var, first_var_after))
+            print(np.array_equal(second_var, second_var_aftern))
+            print("training has taken time: ", time.time() - start_time)
+
                     
 
             #how good is model on training data

@@ -57,6 +57,8 @@ ydim = train_y.shape[1]
 #         .softmax(name='prob'))
 
 #In Python 3.5, change this to:
+
+
 #net_data = load(open("bvlc_alexnet.npy", "rb"), encoding="latin1").item()
 
 def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group=1):
@@ -227,6 +229,7 @@ def savePictures():
 
   #np.save("images.npy", run(images))
   all_features = run(images)
+
   all_features=np.array(all_features)
 
   carpet_features = all_features[:10,:]

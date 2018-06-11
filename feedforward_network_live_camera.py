@@ -136,29 +136,7 @@ def feedforward_network(inputState, inputSize, outputSize, num_fc_layers, depth_
 	#fc(1000, relu=False, name='fc8')
 	fc8W = tf.Variable(net_data["fc8"][0], trainable = False)
 	fc8b = tf.Variable(net_data["fc8"][1], trainable = False)
-	fc8 = tf.nn.xw_plus_b(fc7, fc8W, fc8b)
-
-	#prob
-	#softmax(name='prob'))
-	#prob = tf.nn.softmax(fc8)
-
-	init = tf.initialize_all_variables()
-	
-	# output = sess.run(fc8, feed_dict = {x:image})
-
-	# out = []
-	# for i in output:
-	# out.append(np.ndarray.flatten(i))
-	# out = np.array(out)
-
-	# np.random.seed(0)
-	# matrix = np.random.uniform(low=-1, high=1,size=(len(out[0]), 5))
-	# points = []
-	# for i in out:
-	# points.append(i.dot(matrix))
-
-	# return points
-	
+	fc8 = tf.nn.xw_plus_b(fc7, fc8W, fc8b)	
 	
 	# **********ORIGINAL FEEDFORWARD NETWORK******************
 	#vars

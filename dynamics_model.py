@@ -4,6 +4,7 @@ import numpy.random as npr
 import tensorflow as tf
 import time
 import math
+import os
 
 
 
@@ -97,10 +98,8 @@ class Dyn_Model:
 
         #how much of old data to use per batch
         batchsize_old_pts = int(self.batchsize- batchsize_new_pts)
-
         #training loop
         for i in range(nEpoch):
-            
             #reset to 0
             avg_loss=0
             num_batches=0
@@ -111,8 +110,9 @@ class Dyn_Model:
             if(batchsize_old_pts>0): 
 
                 #get through the full old dataset
-                for batch in range(int(math.floor(nData_old / batchsize_old_pts))):
 
+                for batch in range(int(math.floor(nData_old / batchsize_old_pts))):
+                    start_time = time.time()
                     #randomly sample points from new dataset
                     if(num_new_pts==0):
                         dataX_new_batch = dataX_new
@@ -133,9 +133,9 @@ class Dyn_Model:
                     if self.use_one_hot and self.use_camera: # Live camera
                         #Hasn't been tiled yet due to memory constraints
                         steps_per_rollout = dataX.shape[0]/dataCamera.shape[0]
-                        print(steps_per_rollout)
-                        print(type(old_indeces))
-                        actual_indices = np.floor(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]/steps_per_rollout)
+                        # print(steps_per_rollout)
+                        # print(type(old_indeces))
+                        actual_indices = np.floor(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]/steps_per_rollout).astype(int)
                         dataCamera_batch = dataCamera[actual_indices, :, :, :] 
                     else:
                         dataOneHots_batch = dataOneHots[old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts], :]
@@ -146,6 +146,15 @@ class Dyn_Model:
                     dataZ_next = dataZ[data_next_indeces, :]
 
                     #one iteration of feedforward training
+                    print("Before training, time to create batch: ", time.time() - start_time)
+
+                    # print("variable values before training: ")
+                    # all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+                    # var_vals = self.sess.run(all_vars)
+                    # first_var = var_vals[0]
+                    # second_var = var_vals[1]
+                    #print(first_var.shape)
+                    #print(second_var.shape)
                     if self.use_one_hot and self.use_camera:
                         _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
                                                                 feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch,
@@ -154,6 +163,14 @@ class Dyn_Model:
                         _, loss, output, true_output = self.sess.run([self.train_step, self.mse_, self.curr_nn_output, self.z_], 
                                                                 feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch,
                                                                 self.next_z_: dataZ_next, self.tiled_onehots: dataOneHots_batch})
+                    print("After training, time to train: ", time.time() - start_time)
+
+                    # print("variable values after training: ")
+                    # var_vals = self.sess.run(all_vars)
+                    # first_var_after = var_vals[0]
+                    # second_var_after = var_vals[1]
+                    #print(np.array_equal(first_var, first_var_after))
+                    #print(np.array_equal(second_var, second_var_after))
 
                     training_loss_list.append(loss)
                     avg_loss+= loss
@@ -165,6 +182,12 @@ class Dyn_Model:
                 if((i%10)==0):
                     print("\n=== Epoch {} ===".format(i))
                     print ("loss: ", avg_loss/num_batches)
+
+            # save model after an epoch
+            saver = tf.train.Saver(max_to_keep=0)
+            save_dir = os.path.dirname(os.path.abspath(__file__)) + '/run_1'
+            save_path = saver.save(self.sess, save_dir + '/models/model_epoch' + str(i) + '.ckpt')
+            print("Model saved at ", save_path)
         
         if(not(self.print_minimal)):
             print ("Training set size: ", (nData_old + dataX_new.shape[0]))
@@ -187,12 +210,12 @@ class Dyn_Model:
             dataZ_next = dataZ[data_next_indeces, :]
             #one iteration of feedforward training
 
-            if dataOneHots:
-                loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
-                                                                                self.tiled_onehots: dataOneHots_batch})
-            elif dataCamera:
+            if self.use_one_hot and self.use_camera:
                 loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
                                                                                 self.tiled_camera_input: dataCamera_batch})
+            else:
+                loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
+                                                                                self.tiled_onehots: dataOneHots_batch})
 
             avg_old_loss+= loss
             iters_in_batch+=1
@@ -215,12 +238,12 @@ class Dyn_Model:
             data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
             dataZ_next = dataZ[data_next_indeces, :]
             #one iteration of feedforward training
-            if dataOneHots:
-                loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
-                                                                                self.tiled_onehots: dataOneHots_batch})
-            elif dataCamera:
+            if self.use_one_hot and self.use_camera:
                 loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
                                                                                 self.tiled_camera_input: dataCamera_batch})
+            else:
+                loss, _ = self.sess.run([self.mse_, self.curr_nn_output], feed_dict={self.x_: dataX_batch, self.z_: dataZ_batch, self.next_z_: dataZ_next, 
+                                                                                self.tiled_onehots: dataOneHots_batch})
             avg_new_loss+= loss
             iters_in_batch+=1
         if(iters_in_batch==0):
