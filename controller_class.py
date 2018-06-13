@@ -57,6 +57,7 @@ class Controller(object):
       #set vars
       self.visualize_rviz=visualize_rviz
       self.serial_port = serial_port
+      self.camera_serial_port = camera_serial_port
       self.baud_rate = baud_rate
       self.DEFAULT_ADDRS = DEFAULT_ADDRS
       self.N= N
@@ -168,6 +169,7 @@ class Controller(object):
       self.publish_markers_desired= rospy.Publisher('visualize_desired', MarkerArray, queue_size=5)
       self.pub_full_curr_state= rospy.Publisher('full_curr_state', Float32MultiArray, queue_size=5)
 
+      #IPython.embed()
       #action selector (MPC)
       self.a = Actions(visualize_rviz=self.visualize_rviz)
 
@@ -212,6 +214,11 @@ class Controller(object):
       command_frequency = 0
       time_compute_action = 0
       number_compute_action = 0
+
+      #Preliminary camera "warm-up", since the first open of the camera always has issues
+      cap = cv2.VideoCapture(int(self.camera_serial_port[-1]))
+      cap.release()
+
       while True:
 
         if(step%10==0):
@@ -247,7 +254,7 @@ class Controller(object):
         while(got_data==False):
           if (time.time() - start_time)%5 == 0:
             print("Controller is waiting to receive data from robot")
-          if (time.time() - start_time) > 10:
+          if (time.time() - start_time) > 15:
             # Unsuccessful run; roach stopped communicating with xbee
             stop_roach(self.lock, self.robots, self.use_pid_mode)
             return None, None, None
@@ -296,11 +303,11 @@ class Controller(object):
         abbrev_curr_state, old_time, old_pos, old_al, old_ar = singlestep_to_state(robotinfo, self.mocap_info, old_time, old_pos, old_al, old_ar, self.state_representation)
 
         # Get live camera input
-        if camera_serial_port: #If not none  
-          cap = cv2.VideoCapture(self.serial_port[-1])
+        if self.camera_serial_port: #If not none  
+          cap = cv2.VideoCapture(int(self.camera_serial_port[-1]))
           ret, frame = cap.read()
 
-          # cv2.imshow('frame', frame)
+          #cv2.imshow('frame', frame)
 
           # A temporary file that it's ok to continuously write over
           # "Image" object in OpenCV to .jpg
@@ -313,9 +320,13 @@ class Controller(object):
           # **********PREPROCESS**************
           # Subtract mean, flip rgb to bgr, then feed into alexnet + random projection + feedforwardnetwork_camera 
           # This should be the mean of the dataset alexnet was trained on....
-          training_mean = np.load(self.save_dir +'/'+ self.traj_save_path +'/data/mean_camera.npy')
+          
+          # REPLACE WITH COMMENTED OUT LINE WHEN TRAINIG WITH REAL LIVE CAMERA
+          # training_mean = np.load(self.save_dir + /data/mean_camera.npy')
+          # bELOW won't be completely accurate, cause you used each image a different number of times. But at least it's consistent with what you "cheaty-trained' on
+          training_mean= [123.68, 116.779, 103.939] 
 
-          img = (imread(temp_img_filename + '_final.jpg')[:,:,:3]).astype(float32)
+          img = (imread(temp_img_filename + '_final.jpg')[:,:,:3]).astype(np.float32)
 
           img = img - training_mean 
           img[:, :, 0], img[:, :, 2] = img[:, :, 2], img[:, :, 0]

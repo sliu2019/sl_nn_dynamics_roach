@@ -5,7 +5,7 @@ import tensorflow as tf
 import time
 import math
 import os
-
+import IPython
 
 
 class Dyn_Model:
@@ -135,6 +135,8 @@ class Dyn_Model:
                         steps_per_rollout = dataX.shape[0]/dataCamera.shape[0]
                         # print(steps_per_rollout)
                         # print(type(old_indeces))
+
+                        # CHANGE THIS LINE WHEN YOU HAVE ACTUAL LIVE-CAMERA RUNS TO TRAIN ON
                         actual_indices = np.floor(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]/steps_per_rollout).astype(int)
                         dataCamera_batch = dataCamera[actual_indices, :, :, :] 
                     else:
@@ -200,10 +202,11 @@ class Dyn_Model:
             # Batch the training data
             dataX_batch = dataX[batch*self.batchsize:(batch+1)*self.batchsize, :]
             dataZ_batch = dataZ[batch*self.batchsize:(batch+1)*self.batchsize, :]
-            if dataOneHots:
-                dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
-            elif dataCamera:
+            if self.use_one_hot and self.use_camera:
                 dataCamera_batch = dataCamera[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            else:
+                dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            
 
             data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
             data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
@@ -228,11 +231,11 @@ class Dyn_Model:
             # Batch the training data
             dataX_batch = dataX_new[batch*self.batchsize:(batch+1)*self.batchsize, :]
             dataZ_batch = dataZ_new[batch*self.batchsize:(batch+1)*self.batchsize, :]
-
-            if dataOneHots:
-                dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
-            elif dataCamera:
+            
+            if self.use_one_hot and self.use_camera:
                 dataCamera_batch = dataCamera[batch*self.batchsize:(batch+1)*self.batchsize, :]
+            else:
+                dataOneHots_batch = dataOneHots[batch*self.batchsize:(batch+1)*self.batchsize, :]
 
             data_next_indeces = np.clip(np.array(old_indeces[batch*batchsize_old_pts:(batch+1)*batchsize_old_pts]) + 1, 0, dataX.shape[0]-1)
             data_next_indeces = np.clip([data_next_indeces + 1, data_next_indeces + 2, data_next_indeces + 3], 0, dataX.shape[0]-1).T
@@ -289,6 +292,9 @@ class Dyn_Model:
         #init vars
         state_list = []
 
+        ########TIMING
+        start_time = time.time()
+
         if(many_in_parallel):
             #init vars
             N= forwardsim_y.shape[0]
@@ -296,7 +302,14 @@ class Dyn_Model:
             if(self.use_one_hot):
                 if self.use_camera:
                     # Q: Is it also just np.tile for 3D matrix inputs to a CNN?
-                    self.tiled_img = np.tile(img, (N, 1))
+                    self.tiled_img = []
+                    for i in range(N):
+                        # Is there a more efficient way of "tiling" along a 4th dimension? np.tile doesn't 
+                        self.tiled_img.append(np.copy(img))
+                    self.tiled_img = np.array(self.tiled_img)
+
+                    time_1 = time.time()
+                    print("time to create tiled images: ", time_1 - start_time)
                 else:
                     self.tiled_curr_env_onehot = np.tile(self.curr_env_onehot, (N,1))
             else:
@@ -318,13 +331,17 @@ class Dyn_Model:
 
             #advance all N sims, one timestep at a time
             for timestep in range(horizon):
-
+                #time_2 = time.time()
+                print("time to do 1 loop: ", time.time() - time_1)
+                time_1 =  time.time()
+                
                 #keep track of states for all N sims
                 state_list.append(np.copy(curr_states))
 
                 #make [N x (state,action)] array to pass into NN
                 # Assuming that the position (x, y, z) are in the 1st three entries of state
                 #print("inside forward_sim, the curr_state shape is: ", curr_states.shape)
+                # Takes about 40 seconds to evaluate
                 abbrev_curr_states = curr_states[:, 3:]
                 states_preprocessed = np.nan_to_num(np.divide((abbrev_curr_states-array_meanx), array_stdx))
                 actions_preprocessed = np.nan_to_num(np.divide((forwardsim_y[:,timestep,:]-array_meany), array_stdy))
@@ -347,15 +364,16 @@ class Dyn_Model:
             curr_state = np.copy(forwardsim_x_true[0]) #curr state is of dim NN input
             curr_index = 0
 
-            for curr_control in forwardsim_y:
+            for i in range(forwardsim_y.shape[0]):
+                curr_control = forwardsim_y[i]
 
                 state_list.append(np.copy(curr_state))
                 curr_control = np.expand_dims(curr_control, axis=0)
 
                 if(self.use_one_hot):
                     if self.use_camera:
-                        # nothing to do here, currently
-                        img = img
+                        # get the current image
+                        curr_img = np.array([img[i]]) #to give shape (1, 227, 227, 3)
                     else:
                         curr_onehot = np.expand_dims(forwardsim_onehot[curr_index], axis=0) 
                 else:
@@ -372,7 +390,9 @@ class Dyn_Model:
 
                 #run through NN to get prediction
                 if self.use_one_hot and self.use_camera:
-                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_camera_input: img}) 
+                    # print(inputs_preprocessed.shape)
+                    # IPython.embed()
+                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_camera_input: curr_img}) 
                 else:
                     model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_onehots: curr_onehot}) 
 
