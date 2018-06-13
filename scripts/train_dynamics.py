@@ -28,8 +28,6 @@ from utils import *
 from dynamics_model import Dyn_Model
 from controller_class import Controller
 from controller_class_playback import ControllerPlayback
-###################from myalexnet_forward import returnPictureEncoding
-
 
 #datatypes
 tf_datatype= tf.float32
@@ -51,10 +49,10 @@ def main():
     traj_save_path= desired_shape_for_traj + str(save_run_num)     #directory name inside run_num directory
 
     #######TRAINING########## 
-    train_now = True
+    train_now = False
 
     # train_now = False: which saved model to potentially load from
-    model_name = 'camera_no_xy'     #onehot_smaller, combined, camera
+    model_name = 'camera_alexnet'     #onehot_smaller, combined, camera
     
     # train_now = True: select training data
     use_existing_data = True #Basically, if true, use pre-processed data; false, re-pre-process the data specified below
@@ -91,8 +89,8 @@ def main():
     slow_pid_mode = True
 
     #xbee connection port
-    serial_port = '/dev/ttyUSB1'
-    camera_serial_port = '/dev/ttyUSB1'
+    serial_port = '/dev/ttyUSB0'
+    camera_serial_port = '/dev/video2'
 
     #controller
     visualize_rviz=True   #turning this off could make things go faster
@@ -266,7 +264,7 @@ def main():
     #################################################
 
     gpu_device = 0
-    gpu_frac = 0.3
+    gpu_frac = 0.9 #0.3
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_device)
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_frac)
     config = tf.ConfigProto(gpu_options=gpu_options,
@@ -311,6 +309,8 @@ def main():
             forwardsim_x_true = np.load(save_dir+ '/data/forwardsim_x_true.npy')
             forwardsim_y = np.load(save_dir+ '/data/forwardsim_y.npy')
 
+            forwardsim_camera = None
+            forwardsim_onehot = None
             if(use_one_hot):
                 if use_camera:
                     forwardsim_camera = np.load(save_dir + '/data/forwardsim_camera.npy')
@@ -530,18 +530,14 @@ def main():
 
                     #print(camera_file)
                     curr_surface = camera_file.split("/")[-1].split("_")[3].split(".")[0]
+                    index = np.random.randint(0, 10)
+                    camera_file = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/images/' + curr_surface + "_images_" + str(index) + ".jpg"
+                    training_mean= [123.68, 116.779, 103.939] # of the images in that file
+                    img = (imread(camera_file)[:,:,:3]).astype(np.float32)
+                    img = img - training_mean
+                    img[:, :, 0], img[:, :, 2] = img[:, :, 2], img[:, :, 0]
+                    camera_info = img
 
-                    index = None
-                    if(curr_surface=='carpet'):
-                        index = 0
-                    if(curr_surface=='gravel'):
-                        index = 20
-                    if(curr_surface=='turf'):
-                        index = 30
-                    if(curr_surface=='styrofoam'):
-                        index = 10
-                    index += np.random.randint(10) 
-                    camera_info = mappings[index]
 
                     robot_info = pickle.load(open(robot_file,'r'))
                     mocap_info = pickle.load(open(mocap_file,'r'))
@@ -549,11 +545,14 @@ def main():
                     #turn saved rollout into s
                     full_states_for_dataX, actions_for_dataY= rollout_to_states(robot_info, mocap_info, "all")
                     abbrev_states_for_dataX, actions_for_dataY = rollout_to_states(robot_info, mocap_info, state_representation)
-                    tiled_camera_info = np.tile(camera_info, (abbrev_states_for_dataX.shape[0],1))
+                    #tiled_camera_info = np.tile(camera_info, (abbrev_states_for_dataX.shape[0],1))
 
                     states_val.append(abbrev_states_for_dataX)
                     controls_val.append(actions_for_dataY)
-                    camera_val.append(tiled_camera_info)
+
+                    # TOO LARGE TO TILE EVERYTHING AND THEN SAVE. DO TRICK WITH INDICES INSTEAD. 
+                    camera_val.append(camera_info)
+                    #camera_val.append(tiled_camera_info)
                 #save validation data
                 states_val = np.array(states_val)
                 controls_val = np.array(controls_val)
@@ -565,11 +564,15 @@ def main():
                 #set aside un-preprocessed data, to use later for forward sim
                 forwardsim_x_true = full_states_for_dataX[4:16] #use these steps from the last validation rollout
                 forwardsim_y = actions_for_dataY[4:16] #use these steps from the last validation rollout
-                forwardsim_camera = camera_val[4:16] #use these steps from the last validation rollout
+                #forwardsim_camera = camera_val[4:16] #use these steps from the last validation rollout
+                forwardsim_camera = camera_val[np.floor(np.array(range(4, 16))/49).astype(int)]
 
                 np.save(save_dir+ '/data/forwardsim_x_true.npy', forwardsim_x_true)
                 np.save(save_dir+ '/data/forwardsim_y.npy', forwardsim_y)
                 np.save(save_dir+ '/data/forwardsim_camera.npy', forwardsim_camera)
+
+                # print("Saved validation data")
+                # return
             else:
                 states_val = []
                 controls_val = []
@@ -711,18 +714,18 @@ def main():
         dataZ_new = np.zeros((0,dataZ.shape[1]))
         print("dataX dim: ", dataX.shape)
 
-        # if(playback_mode):
-        #     controller = ControllerPlayback(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
-        #                         left_min, left_max, right_min, right_max, 
-        #                         use_pid_mode=use_pid_mode,
-        #                         frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
-        #                         N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
-        # else:
-        #     controller = Controller(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
-        #                         left_min, left_max, right_min, right_max, 
-        #                         use_pid_mode=use_pid_mode,
-        #                         frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
-        #                         N=N, horizon=horizon, serial_port=serial_port, camera_serial_port = camera_serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
+        if(playback_mode):
+            controller = ControllerPlayback(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
+                                left_min, left_max, right_min, right_max, 
+                                use_pid_mode=use_pid_mode,
+                                frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+                                N=N, horizon=horizon, serial_port=serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
+        else:
+            controller = Controller(traj_save_path, save_dir, dt_steps, state_representation, desired_shape_for_traj,
+                                left_min, left_max, right_min, right_max, 
+                                use_pid_mode=use_pid_mode,
+                                frequency_value=frequency_value, stateSize=dataX.shape[1], actionSize=dataY.shape[1], 
+                                N=N, horizon=horizon, serial_port=serial_port, camera_serial_port = camera_serial_port, baud_rate=baud_rate, DEFAULT_ADDRS=DEFAULT_ADDRS,visualize_rviz=visualize_rviz)
 
         while(counter<num_aggregation_iters):
 
@@ -756,18 +759,6 @@ def main():
             training_loss=0
             old_loss=0
             new_loss=0
-
-
-            #TEMPORARY
-            nEpoch = 20
-            start_time = time.time()
-            print("variable values before training: ")
-            all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-            var_vals = sess.run(all_vars)
-            first_var = var_vals[0]
-            second_var = var_vals[1]
-            print(first_var.shape)
-            print(second_var.shape)
             
             if(counter>0):
                 if use_one_hot and use_camera:
@@ -783,16 +774,6 @@ def main():
                 else:
                     saver = tf.train.Saver()
                     saver.restore(sess, restore_dynamics_model_filepath)
-
-            print("variable values after training: ")
-            var_vals = sess.run(all_vars)
-            first_var_after = var_vals[0]
-            second_var_after = var_vals[1]
-            print(np.array_equal(first_var, first_var_after))
-            print(np.array_equal(second_var, second_var_aftern))
-            print("training has taken time: ", time.time() - start_time)
-
-                    
 
             #how good is model on training data
             training_loss_list.append(training_loss)
@@ -820,7 +801,7 @@ def main():
             print("Model saved at ", save_path)
 
             #Just train for x, y right now
-            return
+            #return
 
             #####################################
             ## Validation Metrics
@@ -915,7 +896,10 @@ def main():
 
                 #for a given set of controls ... compare sim traj vs. learned model's traj (dont expect this to be good cuz error accum)
                 many_in_parallel=False
-                forwardsim_x_pred = dyn_model.do_forward_sim(forwardsim_x_true, forwardsim_y, forwardsim_onehot, None, many_in_parallel, None, None)    
+                print(forwardsim_camera.shape)
+                print(forwardsim_x_true.shape)
+                print(forwardsim_y.shape)
+                forwardsim_x_pred = dyn_model.do_forward_sim(forwardsim_x_true, forwardsim_y, forwardsim_onehot, forwardsim_camera, many_in_parallel, None, None)    
                 forwardsim_x_pred = np.array(forwardsim_x_pred)
 
                 # save results of forward sim

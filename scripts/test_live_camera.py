@@ -12,6 +12,12 @@ import cv2
 from os import system
 from scipy.misc import imread
 
+cap = cv2.VideoCapture(1)
+cap.release()
+
+print("jolly good")
+cats = []
+
 for i in range(3):
 	cap = cv2.VideoCapture(1)
 	ret, frame = cap.read()
@@ -31,7 +37,7 @@ for i in range(3):
 	# This should be the mean of the dataset alexnet was trained on....
 	training_mean= [123.68, 116.779, 103.939]
 
-	im = (imread(temp_img_filename)[:,:,:3]).astype(float32)
+	im = (imread(temp_img_filename)[:,:,:3]).astype(np.float32)
 
 	im = im - training_mean 
 	im[:, :, 0], im[:, :, 2] = im[:, :, 2], im[:, :, 0]
