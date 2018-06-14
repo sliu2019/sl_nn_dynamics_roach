@@ -52,7 +52,7 @@ def main():
     train_now = False
 
     # train_now = False: which saved model to potentially load from
-    model_name = 'camera_alexnet'     #onehot_smaller, combined, camera
+    model_name = 'camera_no_xy'     #onehot_smaller, combined, camera
     
     # train_now = True: select training data
     use_existing_data = True #Basically, if true, use pre-processed data; false, re-pre-process the data specified below

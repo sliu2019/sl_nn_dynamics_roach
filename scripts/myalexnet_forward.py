@@ -80,17 +80,15 @@ def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group
 				conv = tf.concat(output_groups, 3)
 		return  tf.reshape(tf.nn.bias_add(conv, biases), [-1]+conv.get_shape().as_list()[1:])
 
-def form_alexnet():
+def form_alexnet(input):
 	net_data = load("bvlc_alexnet.npy").item()
-	x = tf.placeholder(tf.float32, (None,) + xdim)
-
 
 	#conv1
 	#conv(11, 11, 96, 4, 4, padding='VALID', name='conv1')
 	k_h = 11; k_w = 11; c_o = 96; s_h = 4; s_w = 4
 	conv1W = tf.Variable(net_data["conv1"][0])
 	conv1b = tf.Variable(net_data["conv1"][1])
-	conv1_in = conv(x, conv1W, conv1b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=1)
+	conv1_in = conv(input, conv1W, conv1b, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=1)
 	conv1 = tf.nn.relu(conv1_in)
 
 	#lrn1
@@ -182,12 +180,13 @@ def form_alexnet():
 	#prob
 	#softmax(name='prob'))
 	#prob = tf.nn.softmax(fc8)
-	init = tf.initialize_all_variables()
-
-	return init, fc8
+	return fc8
 
 def run(images):
-	init, fc8 = form_alexnet()
+	x = tf.placeholder(tf.float32, (None,) + xdim)
+	fc8 = form_alexnet(x)
+	init = tf.initialize_all_variables()
+
 	gpu_device = 0
 	gpu_frac = 0.9 #0.3
 	os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_device)
