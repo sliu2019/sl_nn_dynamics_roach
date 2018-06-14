@@ -4,20 +4,24 @@ import numpy.random as npr
 import tensorflow as tf
 import time
 import math
-import os
+import os, sys
 import IPython
 
+# My imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from myalexnet_forward import *
+from feedforward_network_camera import *
 
 class Dyn_Model:
 
-    def __init__(self, inputSize, outputSize, sess, learning_rate, batchsize, which_agent, x_index, y_index, 
+    def __init__(self, inputSize, outputSize, learning_rate, batchsize, which_agent, x_index, y_index, 
                 num_fc_layers, depth_fc_layers, mean_x, mean_y, mean_z, std_x, std_y, std_z, tf_datatype, np_datatype,
-                print_minimal, feedforward_network, use_one_hot, use_camera, curr_env_onehot, N, use_multistep_loss=False, one_hot_dims=4):
+                print_minimal, feedforward_network, train_now, model_name, cuda_config, use_one_hot, use_camera, curr_env_onehot, N, use_multistep_loss=False, one_hot_dims=4):
 
         
 
         #init vars
-        self.sess = sess
+        #self.sess = sess
         self.batchsize = batchsize
         self.which_agent = which_agent
         self.x_index = x_index
@@ -33,6 +37,9 @@ class Dyn_Model:
         self.print_minimal = print_minimal
         self.use_multistep_loss = use_multistep_loss
         self.np_datatype = np_datatype
+        self.train_now = train_now
+        self.model_name = model_name
+        self.config = cuda_config
         self.use_one_hot = use_one_hot
         self.use_camera = use_camera
         self.one_hot_dims=one_hot_dims
@@ -43,46 +50,92 @@ class Dyn_Model:
         #     self.curr_env_onehot = np.tile(curr_env_onehot, (N,1))
         # else:
         #     self.curr_env_onehot= np.ones((1,self.one_hot_dims))
+        self.proj_matrix = np.random.uniform(size=(1000, self.one_hot_dims - 1))
 
-        #placeholders
-        self.x_ = tf.placeholder(tf_datatype, shape=[None, self.inputSize], name='x') #inputs
-        self.z_ = tf.placeholder(tf_datatype, shape=[None, self.outputSize], name='z') #labels
-        self.next_z_ = tf.placeholder(tf_datatype, shape=[None, 3, self.outputSize], name='next_z')
-        #forward pass
-        if self.use_one_hot and self.use_camera:
-            self.tiled_camera_input = tf.placeholder(tf_datatype, shape=[None, 227, 227, 3])
-            self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
-                                                    num_fc_layers, depth_fc_layers, tf_datatype, self.tiled_camera_input)
-        else:
+        g_1 = tf.Graph()
+        with g_1.as_default():
+            self.x_alex = tf.placeholder(tf.float32, (None,) + xdim)
+            self.fc8 = form_alexnet(self.x_alex)
+            init = tf.initialize_all_variables()
+
+            self.sess_1 = tf.Session(config = self.config)
+            self.sess_1.run(init)
+
+            # Do a "priming" warm-up run
+            training_mean= [123.68, 116.779, 103.939]
+            s =  os.path.dirname(os.path.abspath(__file__)) + "/images/carpet_images_1.jpg"
+            im1 = (imread(s)[:,:,:3]).astype(np.float32)
+
+            im1 = im1 - training_mean #mean(im1)
+            im1[:, :, 0], im1[:, :, 2] = im1[:, :, 2], im1[:, :, 0]
+
+            images = []
+            #for i in range(1):
+            images.append(im1)
+
+            start_time = time.time()
+            output = self.sess_1.run(self.fc8, feed_dict = {self.x_alex:images})
+            print("warm-up run took: ", time.time() - start_time)
+
+        g_2 = tf.Graph()
+        with g_2.as_default():
+            # Operations created in this scope will be added to `g_2`.
+            #placeholders
+            self.x_ = tf.placeholder(tf_datatype, shape=[None, self.inputSize], name='x') #inputs
+            self.z_ = tf.placeholder(tf_datatype, shape=[None, self.outputSize], name='z') #labels
+            self.next_z_ = tf.placeholder(tf_datatype, shape=[None, 3, self.outputSize], name='next_z')
             self.tiled_onehots = tf.placeholder(tf_datatype, shape=[None, self.one_hot_dims]) #tiled one hot vectors
+
+            # Create graph
             self.curr_nn_output = feedforward_network(self.x_, self.inputSize, self.outputSize, 
                                                     num_fc_layers, depth_fc_layers, tf_datatype, self.tiled_onehots)
 
-        if self.use_multistep_loss:
-            self.nn_output2 = feedforward_network(self.curr_nn_output, self.inputSize, self.outputSize, 
-                                                        num_fc_layers, depth_fc_layers, tf_datatype)
-            self.nn_output3 = feedforward_network(self.nn_output2, self.inputSize, self.outputSize, 
-                                                        num_fc_layers, depth_fc_layers, tf_datatype)
-            self.nn_output4 = feedforward_network(self.nn_output3, self.inputSize, self.outputSize, 
-                                                        num_fc_layers, depth_fc_layers, tf_datatype)
-            # loss
-            self.mse_ = tf.reduce_mean(tf.add_n([tf.square(self.z_ - self.curr_nn_output), tf.square(self.next_z_[:,0] - self.nn_output2),
-                                                tf.square(self.next_z_[:,1] - self.nn_output3), tf.square(self.next_z_[:,2] - self.nn_output4)]))
-        else:
-            self.mse_ = tf.reduce_mean(tf.square(self.z_ - self.curr_nn_output))
+            if self.use_multistep_loss:
+                self.nn_output2 = feedforward_network(self.curr_nn_output, self.inputSize, self.outputSize, 
+                                                            num_fc_layers, depth_fc_layers, tf_datatype)
+                self.nn_output3 = feedforward_network(self.nn_output2, self.inputSize, self.outputSize, 
+                                                            num_fc_layers, depth_fc_layers, tf_datatype)
+                self.nn_output4 = feedforward_network(self.nn_output3, self.inputSize, self.outputSize, 
+                                                            num_fc_layers, depth_fc_layers, tf_datatype)
+                # loss
+                self.mse_ = tf.reduce_mean(tf.add_n([tf.square(self.z_ - self.curr_nn_output), tf.square(self.next_z_[:,0] - self.nn_output2),
+                                                    tf.square(self.next_z_[:,1] - self.nn_output3), tf.square(self.next_z_[:,2] - self.nn_output4)]))
+            else:
+                self.mse_ = tf.reduce_mean(tf.square(self.z_ - self.curr_nn_output))
 
-        # Compute gradients and update parameters
-        self.opt = tf.train.AdamOptimizer(learning_rate)
-        self.theta = tf.trainable_variables()
-        self.gv = [(g,v) for g,v in
-                    self.opt.compute_gradients(self.mse_, self.theta)
-                    if g is not None]
-        self.train_step = self.opt.apply_gradients(self.gv)
+            # Compute gradients and update parameters
+            self.opt = tf.train.AdamOptimizer(learning_rate)
+            self.theta = tf.trainable_variables()
+            self.gv = [(g,v) for g,v in
+                        self.opt.compute_gradients(self.mse_, self.theta)
+                        if g is not None]
+            self.train_step = self.opt.apply_gradients(self.gv)
+
+
+            # START SESSION
+            self.sess_2 = tf.Session(config = self.config)
+
+            if self.train_now == False:
+                restore_dynamics_model_filepath = os.path.dirname(os.path.abspath(__file__)) + '/saved_models/'+str(self.model_name)+'/model_aggIter0.ckpt'
+                saver = tf.train.Saver()
+                saver.restore(self.sess_2, restore_dynamics_model_filepath)
+            
+            self.sess_2.run(tf.initialize_all_variables())
+            
+            # WARM UP DYNAMICS MODEL
+            inputs = np.random.uniform(size=(1, self.inputSize))
+            onehots = np.random.uniform(size=(1, self.one_hot_dims))
+
+            start_time = time.time()
+            model_output = self.sess_2.run([self.curr_nn_output], feed_dict={self.x_: inputs, self.tiled_onehots: onehots}) 
+            print("warmup time on dynamics model: ", time.time() - start_time)
+
 
     def train(self, dataX, dataZ, dataOneHots, dataCamera, dataX_new, dataZ_new, nEpoch, save_dir, fraction_use_new):
 
         '''TO DO: new data doesnt have corresponding onehots right now'''
-
+        # TO DO: REPLACE ALL INSTANCES OF self.sess with sess_2
+        # ALsO: every time you call train, you should save the model. Train_dynamics outsources all the saving to this file. 
         #init vars
         start = time.time()
         training_loss_list = []
@@ -292,24 +345,27 @@ class Dyn_Model:
         #init vars
         state_list = []
 
-        ########TIMING
-        start_time = time.time()
-
         if(many_in_parallel):
             #init vars
+            time_1 = time.time()
+
             N= forwardsim_y.shape[0]
             
             if(self.use_one_hot):
                 if self.use_camera:
-                    # Q: Is it also just np.tile for 3D matrix inputs to a CNN?
-                    self.tiled_img = []
-                    for i in range(N):
-                        # Is there a more efficient way of "tiling" along a 4th dimension? np.tile doesn't 
-                        self.tiled_img.append(np.copy(img))
-                    self.tiled_img = np.array(self.tiled_img)
+                    # DO ALL THE IMAGE PROCESSING FIRST; i.e. get the tiled_onehots ready
+                    # Pass through AlexNet and project (using the same matrix every time), flatten, and tile
+                    # Assuming img is a single 227 x 227 x3 np array
 
-                    time_1 = time.time()
-                    print("time to create tiled images: ", time_1 - start_time)
+                    start_time = time.time()
+                    output_alex = self.sess_1.run([self.fc8], feed_dict={self.x_alex : np.expand_dims(img, axis=0)})
+                    print("Time to run AlexNet: ", time.time() - start_time)
+                    # 1 x 1000
+                    processed_output = np.matmul(output_alex[0], self.proj_matrix)
+                    processed_output = np.append(processed_output, [[1]], axis=1) # add bias
+                    # DO I HAVE TO DEMEAN AND STD VARIANCE?
+
+                    self.tiled_curr_env_onehot = np.tile(processed_output, (N, 1))
                 else:
                     self.tiled_curr_env_onehot = np.tile(self.curr_env_onehot, (N,1))
             else:
@@ -330,8 +386,9 @@ class Dyn_Model:
                 curr_states=np.copy(forwardsim_x_true)
 
             #advance all N sims, one timestep at a time
+            print("Total time to run AlexNet and other things: ", time.time() - time_1)
+            time_1 = time.time()
             for timestep in range(horizon):
-                #time_2 = time.time()
                 print("time to do 1 loop: ", time.time() - time_1)
                 time_1 =  time.time()
                 
@@ -348,10 +405,10 @@ class Dyn_Model:
                 inputs_list= np.concatenate((states_preprocessed, actions_preprocessed), axis=1)
 
                 #run the N sims all at once
-                if self.use_one_hot and self.use_camera:
-                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_camera_input: self.tiled_img}) 
-                else:
-                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_onehots: self.tiled_curr_env_onehot}) 
+                # if self.use_one_hot and self.use_camera:
+                #     model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_camera_input: self.tiled_img}) 
+                # else:
+                model_output = self.sess_2.run([self.curr_nn_output], feed_dict={self.x_: inputs_list, self.tiled_onehots: self.tiled_curr_env_onehot}) 
                 state_differences = np.multiply(model_output[0],array_stdz)+array_meanz
 
                 #update the state info
@@ -373,7 +430,17 @@ class Dyn_Model:
                 if(self.use_one_hot):
                     if self.use_camera:
                         # get the current image
-                        curr_img = np.array([img[i]]) #to give shape (1, 227, 227, 3)
+                        #curr_img = np.array([img[i]]) #to give shape (1, 227, 227, 3)
+
+                        output_alex = self.sess_1.run([self.fc8], feed_dict={self.x_alex : np.expand_dims(img[i], axis=0)})
+                        # 1 x 1000
+                        #IPython.embed()
+                        processed_output = np.matmul(output_alex[0], self.proj_matrix)
+                        #print(processed_output.shape)
+                        processed_output = np.append(processed_output, [[1]], axis=1) # add bias
+                        #print(processed_output.shape)
+                        # DO I HAVE TO DEMEAN AND STD VARIANCE?
+                        curr_onehot = processed_output
                     else:
                         curr_onehot = np.expand_dims(forwardsim_onehot[curr_index], axis=0) 
                 else:
@@ -389,12 +456,12 @@ class Dyn_Model:
                 inputs_preprocessed = np.expand_dims(np.append(curr_state_preprocessed, curr_control_preprocessed), axis=0)
 
                 #run through NN to get prediction
-                if self.use_one_hot and self.use_camera:
-                    # print(inputs_preprocessed.shape)
-                    # IPython.embed()
-                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_camera_input: curr_img}) 
-                else:
-                    model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_onehots: curr_onehot}) 
+                # if self.use_one_hot and self.use_camera:
+                #     # print(inputs_preprocessed.shape)
+                #     # IPython.embed()
+                #     model_output = self.sess.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_camera_input: curr_img}) 
+                # else:
+                model_output = self.sess_2.run([self.curr_nn_output], feed_dict={self.x_: inputs_preprocessed, self.tiled_onehots: curr_onehot}) 
 
                 #multiply by std and add mean back in
                 state_differences= (model_output[0][0]*self.std_z)+self.mean_z
