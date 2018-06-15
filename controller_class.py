@@ -173,12 +173,12 @@ class Controller(object):
       #action selector (MPC)
       self.a = Actions(visualize_rviz=self.visualize_rviz)
 
-      #tensorflow options
-      gpu_device = 0
-      gpu_frac = 0.3
-      os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_device)
-      gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_frac)
-      self.config = tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False, allow_soft_placement=True, inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
+      #tensorflow options: deprecated, passed straight to dynamics model
+      # gpu_device = 0
+      # gpu_frac = 0.3
+      # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_device)
+      # gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=gpu_frac)
+      # self.config = tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False, allow_soft_placement=True, inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
 
     def callback_mocap(self,data):
       self.mocap_info = data
