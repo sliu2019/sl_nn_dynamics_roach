@@ -1,0 +1,7 @@
+<launch>
+  <node name="camera" pkg="nn_dynamics_roach" type="camera.py" output="screen">
+    <param name="GPIO_PIN" type="int" value="7" />
+    <param name="PUBLISH_RATE" type="int" value="10" />
+    <param name="TOPIC_NAME" type="str" value="live_camera_image" />
+  </node>
+</launch>
